@@ -203,7 +203,26 @@ namespace Droute.Installer.Forms
         {
             try
             {
-                DiscordManager.Launch(branch);
+                try
+                {
+                    string branchRoot = DiscordManager.GetBranchRoot(branch);
+                    string exePath = DiscordManager.GetDiscordExecutablePath(branchRoot, branch);
+
+                    ProcessStartInfo si = new ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = $"/c runas /trustlevel:0x20000 \"{exePath}\"",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    };
+
+                    Process.Start(si);
+                }
+                catch
+                {
+                    Trace.WriteLine($"failed to run discord as user, try default method");
+                    DiscordManager.Launch(branch);
+                }
             }
             catch (Exception ex)
             {
