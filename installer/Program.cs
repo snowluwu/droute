@@ -24,7 +24,6 @@ namespace Droute.Installer
         {
             mtx = new Mutex(true, "snowluwu.droute", out createdNew);
 
-            // droute is already running
             if (!createdNew)
                 return;
 
