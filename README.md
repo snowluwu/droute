@@ -85,4 +85,15 @@ When Discord updates, it creates a folder with the new version number. Droute ho
 
 ### Settings & Logs
 - **Configuration:** All settings are stored in the Windows Registry at `HKCU/Software/droute` and can be tweaked via `regedit`.
-- **Logs:** The main module writes logs to `%Temp%\droute.log`, while the updater logs are saved to `droute.log` in the Discord root folder.
+- **Logs:** Located at `%LOCALAPPDATA%\droute\logs\<branch>\droute-YYYY-MM-DD.log` and `updater-YYYY-MM-DD.log` (`stable`, `canary`, or `ptb`). Files automatically switch dates on a new day; old logs are retained.
+- **Log Level:** Controlled by the `LogLevel` (DWORD) value in `HKCU\Software\droute`:
+  - `0` — TRACE (all events and detailed UDP operations)
+  - `1` — DEBUG (association attempts, SOCKS negotiation)
+  - `2` — INFO (default: lifecycle events and UDP summaries)
+  - `3` — WARN
+  - `4` — ERROR
+
+**Tips for Opening an Issue:**
+If you are reporting a connectivity or voice chat issue, please attach the relevant `.log` file from the day the problem occurred. 
+- Logs include session IDs (`SESSION`), process PIDs, and connection generations (`generation`) to help trace traffic flows.
+- For your privacy, proxy credentials, packet payloads, and command-line arguments are **never logged**.

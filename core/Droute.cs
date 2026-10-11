@@ -34,6 +34,9 @@ namespace Droute.Core
         }
 
         public static void Install(string appDirectory, byte[] payload)
+            => Install(appDirectory, payload, null);
+
+        public static void Install(string appDirectory, byte[] payload, Action<string, string> observe)
         {
             if (string.IsNullOrEmpty(appDirectory) || !Directory.Exists(appDirectory))
                 throw new DirectoryNotFoundException("App directory not found.");
@@ -49,20 +52,47 @@ namespace Droute.Core
 
             try
             {
+                ObserveInstall(observe, "duplicate_proxy", $"staged=\"{proxyStagedPath}\"");
                 PatchManager.DuplicateProxy(proxyStagedPath);
+                ObserveInstall(observe, "patch_pe", $"staged=\"{proxyStagedPath}\"");
                 PatchManager.ApplyPEPatch(proxyStagedPath);
+                ObserveInstall(observe, "stage_payload", $"staged=\"{payloadStagedPath}\" bytes={payload.Length}");
                 File.WriteAllBytes(payloadStagedPath, payload);
 
+                ObserveInstall(observe, "publish_payload", $"destination=\"{payloadPath}\"");
                 PatchManager.PublishStagedFile(payloadStagedPath, payloadPath);
                 payloadStagedPath = null;
 
+                ObserveInstall(observe, "publish_proxy", $"destination=\"{proxyPath}\"");
                 PatchManager.PublishStagedFile(proxyStagedPath, proxyPath);
                 proxyStagedPath = null;
             }
             finally
             {
-                PatchManager.DeleteStagedFile(proxyStagedPath);
-                PatchManager.DeleteStagedFile(payloadStagedPath);
+                CleanupInstallFile(proxyStagedPath, observe);
+                CleanupInstallFile(payloadStagedPath, observe);
+            }
+        }
+
+        private static void ObserveInstall(Action<string, string> observe, string stage, string details)
+        {
+            // Diagnostics must not change installation or cleanup behavior.
+            try { observe?.Invoke(stage, details); }
+            catch { }
+        }
+
+        private static void CleanupInstallFile(string path, Action<string, string> observe)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            try
+            {
+                if (!File.Exists(path)) return;
+                File.Delete(path);
+                ObserveInstall(observe, "cleanup", $"path=\"{path}\" outcome=deleted");
+            }
+            catch (Exception ex)
+            {
+                ObserveInstall(observe, "cleanup_failed", $"path=\"{path}\" exception={ex}");
             }
         }
 

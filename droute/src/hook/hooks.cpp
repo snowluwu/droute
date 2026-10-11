@@ -12,6 +12,7 @@ namespace droute {
     std::map<SOCKET, UdpAssociation> g_udpMap;
     std::set<SOCKET> g_nonBlockingSockets;
     std::set<SOCKET> g_pendingUdp;
+    std::map<SOCKET, TcpConnection> g_tcpConnections;
 
     namespace Hooks {
 
@@ -32,14 +33,16 @@ namespace droute {
         BOOL (WINAPI* Real_GetOverlappedResultEx)(HANDLE hFile, LPOVERLAPPED lpOverlapped, LPDWORD lpNumberOfBytesTransferred, DWORD dwMilliseconds, BOOL bAlertable) = GetOverlappedResultEx;
 
         bool Install() {
-            if (MH_Initialize() != MH_OK) {
-                LOG_ERROR("MH_Initialize failed");
+            MH_STATUS status = MH_Initialize();
+            if (status != MH_OK) {
+                LOG_ERROR("event=hooks.initialize.failed status=%d description=%s", status, MH_StatusToString(status));
                 return false;
             }
 
             auto HookOne = [&](const wchar_t* mod, const char* name, void* hook, void** orig) -> bool {
-                if (MH_CreateHookApi(mod, name, hook, orig) != MH_OK) {
-                    LOG_ERROR("failed to hook %s", name);
+                const MH_STATUS result = MH_CreateHookApi(mod, name, hook, orig);
+                if (result != MH_OK) {
+                    LOG_ERROR("event=hooks.create.failed module=%S api=%s status=%d description=%s", mod, name, result, MH_StatusToString(result));
                     return false;
                 }
                 LOG_DEBUG("hooked %s", name);
@@ -65,8 +68,9 @@ namespace droute {
 
             if (!HookOne(L"kernel32.dll", "CreateProcessW", Mine_CreateProcessW, (void**)&Real_CreateProcessW)) return false;
 
-            if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
-                LOG_ERROR("MH_EnableHook failed");
+            status = MH_EnableHook(MH_ALL_HOOKS);
+            if (status != MH_OK) {
+                LOG_ERROR("event=hooks.enable.failed status=%d description=%s", status, MH_StatusToString(status));
                 return false;
             }
 

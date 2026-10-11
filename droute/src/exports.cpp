@@ -20,17 +20,27 @@ namespace droute {
                 std::unique_lock<std::shared_mutex> lock(g_stateMutex);
                 for (auto& entry : g_udpMap) {
                     UdpAssociation& association = entry.second;
+                    int error = 0;
+                    const char* reason = "connected";
                     if (association.status != UdpAssociation::Status::Associated ||
-                        !IsSocketDisconnected(association.ctrlSocket))
+                        !IsSocketDisconnected(association.ctrlSocket, &error, &reason))
                         continue;
 
+                    LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu trigger=worker reason=%s wsa_error=%d control=%llu relay=%s",
+                        association.flowId, (ULONG_PTR)entry.first, association.generation, reason, error,
+                        (ULONG_PTR)association.ctrlSocket, AddrToString(association.relayAddr).c_str());
                     if (association.ctrlSocket != INVALID_SOCKET)
                         Hooks::Real_closesocket(association.ctrlSocket);
                     association.ctrlSocket = INVALID_SOCKET;
                     association.relayAddr = {};
                     association.status = UdpAssociation::Status::PendingAssociate;
                     g_pendingUdp.insert(entry.first);
-                    LOG_WARN("udp %llu control connection lost, scheduling reassociation", (ULONG_PTR)entry.first);
+                }
+                const uint64_t now = GetTickCount64();
+                for (auto& entry : g_udpMap) {
+                    auto& a = entry.second;
+                    if (a.status != UdpAssociation::Status::Idle && now - a.lastSummaryAt >= 10000)
+                        LogUdpSummary(entry.first, a, "udp.summary");
                 }
                 pending.assign(g_pendingUdp.begin(), g_pendingUdp.end());
             }
@@ -44,11 +54,13 @@ namespace droute {
                     auto it = g_udpMap.find(s);
                     if (it == g_udpMap.end() || it->second.status != UdpAssociation::Status::PendingAssociate)
                         continue;
+                    LogUdpAssociationStart(s, it->second, "worker");
                     instanceId = it->second.instanceId;
                     it->second.status = UdpAssociation::Status::Associating;
                 }
 
                 bool ok = TryUdpAssociate(temp);
+                const int error = ok ? 0 : WSAGetLastError();
 
                 std::unique_lock<std::shared_mutex> lock(g_stateMutex);
                 auto it = g_udpMap.find(s);
@@ -65,11 +77,10 @@ namespace droute {
                     it->second.relayAddr = temp.relayAddr;
                     it->second.status = UdpAssociation::Status::Associated;
                     g_pendingUdp.erase(s);
-                    LOG_INFO("udp %llu reassociated", (ULONG_PTR)s);
                 } else {
                     it->second.status = UdpAssociation::Status::PendingAssociate;
-                    LOG_TRACE("udp %llu retry failed", (ULONG_PTR)s);
                 }
+                LogUdpAssociationResult(s, it->second, ok, error, temp.associationStage);
                 g_udpAssociationChanged.notify_all();
             }
         }

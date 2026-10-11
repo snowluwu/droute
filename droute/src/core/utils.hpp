@@ -8,7 +8,7 @@ namespace droute {
     bool IsMulticast(const sockaddr_in& addr);
     bool IsUdpSocket(SOCKET s);
     bool IsSameAddr(const sockaddr_in& a, const sockaddr_in& b);
-    bool IsSocketDisconnected(SOCKET s);
+    bool IsSocketDisconnected(SOCKET s, int* error = nullptr, const char** reason = nullptr);
 
     bool WaitForWrite(SOCKET s, int timeoutMs);
     bool WaitForRead(SOCKET s, int timeoutMs);

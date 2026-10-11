@@ -109,11 +109,22 @@ namespace Droute.Installer.Forms
 
         private void openLogsButton_Click(object sender, EventArgs e)
         {
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string path = Path.Combine(localAppData, "Temp", "droute.log");
-
-            try { Process.Start(path); }
-            catch (Exception ex) { Trace.WriteLine($"error during open log file: {ex.ToString()}"); }
+            try
+            {
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (string.IsNullOrEmpty(localAppData))
+                    throw new DirectoryNotFoundException("LocalAppData is unavailable.");
+                string branch = GetSelectedBranch().ToString().ToLowerInvariant();
+                string path = Path.Combine(localAppData, "droute", "logs", branch);
+                Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"error opening logs folder: {ex}");
+                MessageBox.Show($"Unable to open the logs folder.\n\n{ex.Message}",
+                    "Droute: logs", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void installPatchButton_Click(object sender, EventArgs e)
