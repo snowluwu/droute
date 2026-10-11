@@ -17,6 +17,7 @@ namespace droute {
     namespace Logger {
 
         bool Init();
+        // Requests queue drain and waits up to one second; call only outside DllMain.
         void Shutdown();
         void SetLevel(LogLevel level);
         bool Enabled(LogLevel level);
