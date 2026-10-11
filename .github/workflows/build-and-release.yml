@@ -113,10 +113,7 @@ jobs:
           }
           Copy-Item "README.md" -Destination $outDir -ErrorAction SilentlyContinue
           Copy-Item "LICENSE.txt" -Destination $outDir -ErrorAction SilentlyContinue
-          $zipName = "droute-${{ github.ref_name }}.zip"
-          if ($zipName -eq "droute-.zip") {
-            $zipName = "droute-${{ github.run_number }}.zip"
-          }
+          $zipName = "droute.zip"
           Compress-Archive -Path "$outDir\*" -DestinationPath $zipName -Force
           Write-Output "Created archive: $zipName"
 
@@ -145,7 +142,7 @@ jobs:
         with:
           name: droute-build
           path: |
-            droute-*.zip
+            droute.zip
             external-libs.zip
           if-no-files-found: error
           compression-level: 0
@@ -155,7 +152,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            droute-*.zip
+            droute.zip
             external-libs.zip
           name: Release ${{ github.ref_name }}
           body_path: release-notes.md
