@@ -97,3 +97,21 @@ When Discord updates, it creates a folder with the new version number. Droute ho
 If you are reporting a connectivity or voice chat issue, please attach the relevant `.log` file from the day the problem occurred. 
 - Logs include session IDs (`SESSION`), process PIDs, and connection generations (`generation`) to help trace traffic flows.
 - For your privacy, proxy credentials, packet payloads, and command-line arguments are **never logged**.
+
+---
+
+## Custom Integrations
+
+Use `external-libs.zip` to integrate Droute into your own launcher, script, or installer using a public API for Discord installation or removal.
+
+| File | Purpose |
+| --- | --- |
+| `Droute.Core.dll` | API for Discord discovery, installation and removal. |
+| `AsmResolver*.dll` | PE file parsing and patching dependencies. |
+| `MonoMod*.dll` | Runtime compatibility dependencies. |
+| `droute.dll` | Native x64 payload for Discord. |
+| `Droute.UpdaterHook.dll` | Reapplies the patch after updates; includes its dependencies and payload. |
+| `Update.exe.config` | Loads the hook through Discord's `Update.exe`. |
+
+- Keep Core's dependencies beside it and use files from the same release. Core targets .NET Framework 4.5.
+- Configure the proxy separately through the installer or `HKCU\Software\droute`. Restart Discord after changes.
