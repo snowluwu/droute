@@ -9,12 +9,31 @@ namespace droute {
         Status status = Status::Idle;
         SOCKET ctrlSocket = INVALID_SOCKET;
         sockaddr_in relayAddr = {};
+        // Per-process flow identity survives reassociation and distinguishes reused handles.
+        uint64_t flowId = 0;
+        uint64_t createdAt = 0, attemptStartedAt = 0, lastSummaryAt = 0;
+        uint64_t attempts = 0, generation = 0;
+        uint64_t txPackets = 0, rxPackets = 0, txBytes = 0, rxBytes = 0;
+        uint64_t reportedTx = 0, reportedRx = 0;
+        uint64_t lastTxAt = 0, lastRxAt = 0;
+        uint64_t firstTxGeneration = 0, firstRxGeneration = 0;
+        uint64_t ioErrors = 0, wouldBlock = 0, blockedSends = 0, pendingIo = 0;
+        uint64_t lastIoErrorLogAt = 0;
+        int lastIoError = 0, lastAssociationError = 0;
+        const char* associationStage = "none";
+        sockaddr_in destination = {};
     };
 
     extern std::shared_mutex g_stateMutex;
     extern std::map<SOCKET, UdpAssociation> g_udpMap;
     extern std::set<SOCKET> g_nonBlockingSockets;
     extern std::set<SOCKET> g_pendingUdp;
+    struct TcpConnection {
+        uint64_t id = 0;
+        uint64_t startedAt = 0;
+        sockaddr_in destination = {};
+    };
+    extern std::map<SOCKET, TcpConnection> g_tcpConnections;
 
     namespace Hooks {
 

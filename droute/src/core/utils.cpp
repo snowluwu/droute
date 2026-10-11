@@ -34,9 +34,13 @@ namespace droute {
                a.sin_port == b.sin_port;
     }
 
-    bool IsSocketDisconnected(SOCKET s) {
-        if (s == INVALID_SOCKET)
+    bool IsSocketDisconnected(SOCKET s, int* error, const char** reason) {
+        if (error) *error = 0;
+        if (reason) *reason = "connected";
+        if (s == INVALID_SOCKET) {
+            if (reason) *reason = "invalid_control_socket";
             return true;
+        }
 
         fd_set readable;
         FD_ZERO(&readable);
@@ -46,17 +50,26 @@ namespace droute {
         int result = select(0, &readable, nullptr, nullptr, &timeout);
         if (result == 0)
             return false;
-        if (result == SOCKET_ERROR)
+        if (result == SOCKET_ERROR) {
+            if (error) *error = WSAGetLastError();
+            if (reason) *reason = "control_select_failed";
             return true;
+        }
 
         char byte = 0;
         result = recv(s, &byte, 1, MSG_PEEK);
         if (result > 0)
             return false;
-        if (result == 0)
+        if (result == 0) {
+            if (reason) *reason = "control_peer_closed";
             return true;
+        }
 
-        return WSAGetLastError() != WSAEWOULDBLOCK;
+        const int socketError = WSAGetLastError();
+        if (socketError == WSAEWOULDBLOCK) return false;
+        if (error) *error = socketError;
+        if (reason) *reason = "control_recv_failed";
+        return true;
     }
 
     bool WaitForSocket(SOCKET s, bool write, int timeoutMs) {

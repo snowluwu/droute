@@ -8,6 +8,8 @@
 
 namespace droute {
 
+    static std::atomic<uint64_t> g_nextTcpConnection{ 1 };
+
     int ConnectToProxy(SOCKET s, uint64_t deadline) {
         int rc = Hooks::Real_connect(s, reinterpret_cast<const sockaddr*>(&g_proxyAddr), sizeof(g_proxyAddr));
         if (rc == 0)
@@ -35,9 +37,11 @@ namespace droute {
 
     int Socks5ProxyConnect(SOCKET s, const sockaddr_in& target, uint64_t deadline) {
         if (!Socks5Handshake(s, g_cfg.user.c_str(), g_cfg.password.c_str(), deadline)) {
+            LOG_WARN("event=tcp.connect.stage_failed socket=%llu stage=socks_greeting_auth wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
             return SOCKET_ERROR;
         }
         if (!Socks5RequestConnect(s, target, deadline)) {
+            LOG_WARN("event=tcp.connect.stage_failed socket=%llu stage=socks_connect wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
             return SOCKET_ERROR;
         }
         return 0;
@@ -45,6 +49,7 @@ namespace droute {
 
     int ConnectViaProxy(SOCKET s, const sockaddr_in* target, uint64_t deadline) {
         if (ConnectToProxy(s, deadline) != 0) {
+            LOG_WARN("event=tcp.connect.stage_failed socket=%llu stage=proxy_connect proxy=%s wsa_error=%d", (ULONG_PTR)s, AddrToString(g_proxyAddr).c_str(), WSAGetLastError());
             return SOCKET_ERROR;
         }
         if (Socks5ProxyConnect(s, *target, deadline) != 0) {
@@ -60,6 +65,7 @@ namespace droute {
 
         const sockaddr_in* addr = reinterpret_cast<const sockaddr_in*>(name);
         if (addr->sin_family != AF_INET) {
+            LOG_DEBUG("event=tcp.route socket=%llu route=direct reason=address_family family=%d", (ULONG_PTR)s, addr->sin_family);
             return Hooks::Real_connect(s, name, namelen);
         }
 
@@ -68,9 +74,11 @@ namespace droute {
         }
 
         if (IsLocalAddr(*addr) || IsSameAddr(*addr, g_proxyAddr)) {
+            LOG_DEBUG("event=tcp.route socket=%llu route=direct reason=local_or_proxy destination=%s", (ULONG_PTR)s, AddrToString(*addr).c_str());
             return Hooks::Real_connect(s, name, namelen);
         }
         if (IsUdpSocket(s)) {
+            LOG_DEBUG("event=udp.connect socket=%llu route=direct destination=%s", (ULONG_PTR)s, AddrToString(*addr).c_str());
             return Hooks::Real_connect(s, name, namelen);
         }
 
@@ -83,12 +91,23 @@ namespace droute {
         const std::string target = AddrToString(*addr);
         const uint64_t startedAt = GetTickCount64();
         const uint64_t deadline = MakeDeadline(g_cfg.connectTimeout);
+        const uint64_t connection = g_nextTcpConnection.fetch_add(1, std::memory_order_relaxed);
+        {
+            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            g_tcpConnections[s] = { connection, startedAt, *addr };
+        }
+        LOG_INFO("event=tcp.connect.start connection=%llu socket=%llu destination=%s proxy=%s mode=%s timeout_ms=%u",
+            connection, (ULONG_PTR)s, target.c_str(), AddrToString(g_proxyAddr).c_str(),
+            wasNonBlocking ? "nonblocking" : "blocking", g_cfg.connectTimeout);
 
         bool changedToNonBlocking = false;
         if (!wasNonBlocking) {
             u_long mode = 1;
-            if (Hooks::Real_ioctlsocket(s, FIONBIO, &mode) != 0)
+            if (Hooks::Real_ioctlsocket(s, FIONBIO, &mode) != 0) {
+                LOG_WARN("event=tcp.connect.failed connection=%llu socket=%llu stage=socket_mode wsa_error=%d",
+                    connection, (ULONG_PTR)s, WSAGetLastError());
                 return SOCKET_ERROR;
+            }
             changedToNonBlocking = true;
         }
 
@@ -105,20 +124,16 @@ namespace droute {
 
         if (result != 0) {
             WSASetLastError(resultError);
-            LOG_WARN("connect -> %s failed: wsa_error=%d elapsed_ms=%llu",
-                     target.c_str(), resultError, GetTickCount64() - startedAt);
+            LOG_WARN("event=tcp.connect.failed connection=%llu socket=%llu destination=%s wsa_error=%d elapsed_ms=%llu",
+                     connection, (ULONG_PTR)s, target.c_str(), resultError, GetTickCount64() - startedAt);
             WSASetLastError(resultError);
             return SOCKET_ERROR;
         }
 
         const uint64_t elapsed = GetTickCount64() - startedAt;
-        if (elapsed >= 1000) {
-            LOG_WARN("connect -> %s slow mode=%s elapsed_ms=%llu", target.c_str(),
-                     wasNonBlocking ? "nonblocking" : "blocking", elapsed);
-        } else {
-            LOG_DEBUG("connect -> %s via proxy mode=%s elapsed_ms=%llu", target.c_str(),
-                      wasNonBlocking ? "nonblocking" : "blocking", elapsed);
-        }
+        LOG_INFO("event=tcp.connect.ready connection=%llu socket=%llu destination=%s mode=%s elapsed_ms=%llu application_result=%s",
+            connection, (ULONG_PTR)s, target.c_str(), wasNonBlocking ? "nonblocking" : "blocking",
+            elapsed, wasNonBlocking ? "WSAEWOULDBLOCK" : "success");
 
         if (wasNonBlocking) {
             WSASetLastError(WSAEWOULDBLOCK);
