@@ -19,6 +19,13 @@ namespace droute {
         bool Init();
         void Shutdown();
         void SetLevel(LogLevel level);
+        bool Enabled(LogLevel level);
+
+        // Observability must not change the error returned by an intercepted API.
+        struct ErrorScope {
+            DWORD error = GetLastError();
+            ~ErrorScope() { SetLastError(error); }
+        };
 
         void Write(LogLevel level, const char* file, int line, const char* fmt, ...);
 
@@ -26,8 +33,9 @@ namespace droute {
 
 }
 
-#define LOG_TRACE(fmt, ...) do { droute::Logger::Write(droute::LogLevel::Trace, __FILE__, __LINE__, fmt, ##__VA_ARGS__); } while(0)
-#define LOG_DEBUG(fmt, ...) do { droute::Logger::Write(droute::LogLevel::Debug, __FILE__, __LINE__, fmt, ##__VA_ARGS__); } while(0)
-#define LOG_INFO(fmt, ...)  do { droute::Logger::Write(droute::LogLevel::Info,  __FILE__, __LINE__, fmt, ##__VA_ARGS__); } while(0)
-#define LOG_WARN(fmt, ...)  do { droute::Logger::Write(droute::LogLevel::Warn,  __FILE__, __LINE__, fmt, ##__VA_ARGS__); } while(0)
-#define LOG_ERROR(fmt, ...) do { droute::Logger::Write(droute::LogLevel::Error, __FILE__, __LINE__, fmt, ##__VA_ARGS__); } while(0)
+#define DROUTE_LOG(level, fmt, ...) do { if (droute::Logger::Enabled(level)) { droute::Logger::ErrorScope errorScope; droute::Logger::Write(level, __FILE__, __LINE__, fmt, ##__VA_ARGS__); } } while(0)
+#define LOG_TRACE(fmt, ...) DROUTE_LOG(droute::LogLevel::Trace, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) DROUTE_LOG(droute::LogLevel::Debug, fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...)  DROUTE_LOG(droute::LogLevel::Info, fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...)  DROUTE_LOG(droute::LogLevel::Warn, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) DROUTE_LOG(droute::LogLevel::Error, fmt, ##__VA_ARGS__)
