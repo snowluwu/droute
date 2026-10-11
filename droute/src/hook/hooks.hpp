@@ -9,6 +9,7 @@ namespace droute {
         Status status = Status::Idle;
         SOCKET ctrlSocket = INVALID_SOCKET;
         sockaddr_in relayAddr = {};
+        bool suppressUdpConnReset = false;
     };
 
     extern std::shared_mutex g_stateMutex;

@@ -5,6 +5,7 @@
 #include "src/core/logger.hpp"
 #include "src/core/utils.hpp"
 #include "src/net/socks5.hpp"
+#include <mswsock.h>
 
 namespace droute {
 
@@ -380,6 +381,22 @@ namespace droute {
         auto it = g_udpMap.find(s);
         if (it == g_udpMap.end())
             return false;
+
+        // A disappearing relay port can generate ICMP Port Unreachable before
+        // the control TCP disconnect is detected. Do not let that abort Discord's
+        // pending receive (including IOCP); the worker monitors the control TCP
+        // connection and recreates the association independently.
+        if (!it->second.suppressUdpConnReset) {
+            BOOL reportReset = FALSE;
+            DWORD returned = 0;
+            if (WSAIoctl(s, SIO_UDP_CONNRESET, &reportReset, sizeof(reportReset),
+                         nullptr, 0, &returned, nullptr, nullptr) == SOCKET_ERROR) {
+                LOG_WARN("udp %llu cannot suppress relay port reset: wsa_error=%d",
+                         (ULONG_PTR)s, WSAGetLastError());
+                return false;
+            }
+            it->second.suppressUdpConnReset = true;
+        }
 
         if (it->second.status == UdpAssociation::Status::Idle) {
             if (!ActivateUdpRelay(s, lock, it)) {
