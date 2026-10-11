@@ -81,6 +81,20 @@ jobs:
             Write-Output "Droute.Core.dll: $((Get-Item $core).Length) bytes"
           }
 
+          $coreDependencies = @(
+            "AsmResolver.dll",
+            "AsmResolver.PE.dll",
+            "AsmResolver.PE.File.dll",
+            "MonoMod.Backports.dll",
+            "MonoMod.ILHelpers.dll"
+          )
+          foreach ($dependency in $coreDependencies) {
+            $path = Join-Path "core\bin\Release" $dependency
+            if (!(Test-Path -LiteralPath $path -PathType Leaf)) {
+              $errors += "$dependency not found in core\bin\Release"
+            }
+          }
+
           if ($errors.Count -gt 0) {
             foreach ($e in $errors) { Write-Error $e }
             exit 1
@@ -111,7 +125,8 @@ jobs:
           Copy-Item "installer\Resources\Update.exe.config" -Destination "$libsDir\Update.exe.config"
           Copy-Item "installer\Resources\Droute.UpdaterHook.dll" -Destination "$libsDir\Droute.UpdaterHook.dll"
           Copy-Item "installer\Resources\droute_64.dll" -Destination "$libsDir\droute.dll"
-          Copy-Item "core\bin\Release\Droute.Core.dll" -Destination "$libsDir\Droute.Core.dll"
+          # Include all managed runtime dependencies produced by the core build.
+          Copy-Item "core\bin\Release\*.dll" -Destination $libsDir -ErrorAction Stop
 
           $libsZipName = "external-libs.zip"
           Compress-Archive -Path "$libsDir\*" -DestinationPath $libsZipName -Force
