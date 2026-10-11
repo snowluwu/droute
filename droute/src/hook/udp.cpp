@@ -604,8 +604,8 @@ namespace droute {
             return false;
         };
 
-        // A disappearing relay port can generate ICMP Port Unreachable before
-        // the control TCP disconnect is detected. Do not let that abort Discord's
+        // a disappearing relay port can generate ICMP Port Unreachable before
+        // the control TCP disconnect is detected. do not let that abort Discord's
         // pending receive (including IOCP); the worker monitors the control TCP
         // connection and recreates the association independently.
         if (!it->second.suppressUdpConnReset) {
@@ -623,8 +623,8 @@ namespace droute {
 
         for (;;) {
             // WSAEWOULDBLOCK would tell the client to wait for socket readiness.
-            // A SOCKS handshake is not socket backpressure and cannot produce
-            // that notification. Wait for the existing attempt instead.
+            // a socks handshake is not socket backpressure and cannot produce
+            // that notification. wait for the existing attempt instead.
             if (it->second.status == UdpAssociation::Status::Associating) {
                 const int remaining = RemainingTimeout(deadline);
                 if (remaining == 0 || !g_udpAssociationChanged.wait_for(
