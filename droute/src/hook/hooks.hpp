@@ -22,9 +22,12 @@ namespace droute {
         int lastIoError = 0, lastAssociationError = 0;
         const char* associationStage = "none";
         sockaddr_in destination = {};
+        bool suppressUdpConnReset = false;
+        uint64_t instanceId = 0;
     };
 
     extern std::shared_mutex g_stateMutex;
+    extern std::condition_variable_any g_udpAssociationChanged;
     extern std::map<SOCKET, UdpAssociation> g_udpMap;
     extern std::set<SOCKET> g_nonBlockingSockets;
     extern std::set<SOCKET> g_pendingUdp;

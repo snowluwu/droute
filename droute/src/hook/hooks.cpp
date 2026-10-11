@@ -8,6 +8,7 @@
 namespace droute {
 
     std::shared_mutex g_stateMutex;
+    std::condition_variable_any g_udpAssociationChanged;
     std::map<SOCKET, UdpAssociation> g_udpMap;
     std::set<SOCKET> g_nonBlockingSockets;
     std::set<SOCKET> g_pendingUdp;

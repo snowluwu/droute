@@ -47,6 +47,7 @@ namespace droute {
 
             for (SOCKET s : pending) {
                 UdpAssociation temp;
+                uint64_t instanceId = 0;
 
                 {
                     std::unique_lock<std::shared_mutex> lock(g_stateMutex);
@@ -54,6 +55,7 @@ namespace droute {
                     if (it == g_udpMap.end() || it->second.status != UdpAssociation::Status::PendingAssociate)
                         continue;
                     LogUdpAssociationStart(s, it->second, "worker");
+                    instanceId = it->second.instanceId;
                     it->second.status = UdpAssociation::Status::Associating;
                 }
 
@@ -62,7 +64,8 @@ namespace droute {
 
                 std::unique_lock<std::shared_mutex> lock(g_stateMutex);
                 auto it = g_udpMap.find(s);
-                if (it == g_udpMap.end()) {
+                if (it == g_udpMap.end() || it->second.instanceId != instanceId ||
+                    it->second.status != UdpAssociation::Status::Associating) {
                     if (temp.ctrlSocket != INVALID_SOCKET) {
                         Hooks::Real_closesocket(temp.ctrlSocket);
                     }
@@ -78,6 +81,7 @@ namespace droute {
                     it->second.status = UdpAssociation::Status::PendingAssociate;
                 }
                 LogUdpAssociationResult(s, it->second, ok, error, temp.associationStage);
+                g_udpAssociationChanged.notify_all();
             }
         }
         LOG_TRACE("reconnect worker exiting");
