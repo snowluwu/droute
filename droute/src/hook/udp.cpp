@@ -5,6 +5,7 @@
 #include "src/core/logger.hpp"
 #include "src/core/utils.hpp"
 #include "src/net/socks5.hpp"
+#include <mswsock.h>
 
 namespace droute {
 
@@ -234,7 +235,10 @@ namespace droute {
         if (g_udpMap.find(s) != g_udpMap.end())
             return;
 
-        g_udpMap.emplace(s, UdpAssociation{});
+        static uint64_t nextInstanceId = 0;
+        UdpAssociation association;
+        association.instanceId = ++nextInstanceId;
+        g_udpMap.emplace(s, association);
         LOG_DEBUG("udp socket %llu tracked", (ULONG_PTR)s);
     }
 
@@ -254,9 +258,10 @@ namespace droute {
         it->second.relayAddr = {};
         it->second.status = UdpAssociation::Status::PendingAssociate;
         g_pendingUdp.insert(s);
+        g_udpAssociationChanged.notify_all();
     }
 
-    bool TryUdpAssociate(UdpAssociation& out) {
+    bool TryUdpAssociate(UdpAssociation& out, uint64_t deadline) {
         out = {};
         out.status = UdpAssociation::Status::Idle;
 
@@ -273,7 +278,8 @@ namespace droute {
             return false;
         }
 
-        const uint64_t deadline = MakeDeadline(g_cfg.connectTimeout);
+        if (deadline == 0)
+            deadline = MakeDeadline(g_cfg.connectTimeout);
         int rc = Hooks::Real_connect(ctrl, reinterpret_cast<const sockaddr*>(&g_proxyAddr), sizeof(g_proxyAddr));
         if (rc == SOCKET_ERROR) {
             int err = WSAGetLastError();
@@ -326,24 +332,25 @@ namespace droute {
     }
 
     static bool ActivateUdpRelay(SOCKET s, std::unique_lock<std::shared_mutex>& lock,
-                                 std::map<SOCKET, UdpAssociation>::iterator& it) {
-        if (it->second.status == UdpAssociation::Status::Associating ||
-            it->second.status == UdpAssociation::Status::PendingAssociate)
+                                 std::map<SOCKET, UdpAssociation>::iterator& it,
+                                 uint64_t deadline) {
+        if (it->second.status == UdpAssociation::Status::Associating)
             return false;
 
+        const uint64_t instanceId = it->second.instanceId;
         it->second.status = UdpAssociation::Status::Associating;
         lock.unlock();
         UdpAssociation temp;
-        bool ok = TryUdpAssociate(temp);
+        bool ok = TryUdpAssociate(temp, deadline);
         int associationError = ok ? 0 : WSAGetLastError();
         lock.lock();
         it = g_udpMap.find(s);
-        if (it == g_udpMap.end()) {
+        if (it == g_udpMap.end() || it->second.instanceId != instanceId ||
+            it->second.status != UdpAssociation::Status::Associating) {
             if (temp.ctrlSocket != INVALID_SOCKET) {
                 Hooks::Real_closesocket(temp.ctrlSocket);
             }
-            if (!ok)
-                WSASetLastError(associationError);
+            WSASetLastError(WSAENOTSOCK);
             return false;
         }
         if (ok) {
@@ -358,6 +365,7 @@ namespace droute {
             g_pendingUdp.insert(s);
             WSASetLastError(associationError);
         }
+        g_udpAssociationChanged.notify_all();
         return ok;
     }
 
@@ -378,30 +386,82 @@ namespace droute {
     static bool GetUdpRelayForSend(SOCKET s, sockaddr_in& relayAddr, SOCKET& controlSocket) {
         std::unique_lock<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(s);
-        if (it == g_udpMap.end())
+        if (it == g_udpMap.end()) {
+            WSASetLastError(WSAENOTSOCK);
             return false;
+        }
 
-        if (it->second.status == UdpAssociation::Status::Idle) {
-            if (!ActivateUdpRelay(s, lock, it)) {
-                int error = WSAGetLastError();
-                LOG_WARN("udp %llu associate deferred: wsa_error=%d", (ULONG_PTR)s, error);
-                WSASetLastError(error);
+        const uint64_t instanceId = it->second.instanceId;
+        const uint64_t deadline = MakeDeadline(g_cfg.connectTimeout);
+
+        // A disappearing relay port can generate ICMP Port Unreachable before
+        // the control TCP disconnect is detected. Do not let that abort Discord's
+        // pending receive (including IOCP); the worker monitors the control TCP
+        // connection and recreates the association independently.
+        if (!it->second.suppressUdpConnReset) {
+            BOOL reportReset = FALSE;
+            DWORD returned = 0;
+            if (WSAIoctl(s, SIO_UDP_CONNRESET, &reportReset, sizeof(reportReset),
+                         nullptr, 0, &returned, nullptr, nullptr) == SOCKET_ERROR) {
+                LOG_WARN("udp %llu cannot suppress relay port reset: wsa_error=%d",
+                         (ULONG_PTR)s, WSAGetLastError());
                 return false;
             }
-            LOG_INFO("udp %llu associated, relay=%s", (ULONG_PTR)s, AddrToString(it->second.relayAddr).c_str());
+            it->second.suppressUdpConnReset = true;
         }
 
-        if (it->second.status != UdpAssociation::Status::Associated)
-            return false;
+        for (;;) {
+            // WSAEWOULDBLOCK would tell the client to wait for socket readiness.
+            // A SOCKS handshake is not socket backpressure and cannot produce
+            // that notification. Wait for the existing attempt instead.
+            if (it->second.status == UdpAssociation::Status::Associating) {
+                const int remaining = RemainingTimeout(deadline);
+                if (remaining == 0 || !g_udpAssociationChanged.wait_for(
+                        lock, std::chrono::milliseconds(remaining), [&] {
+                            auto current = g_udpMap.find(s);
+                            return current == g_udpMap.end() ||
+                                current->second.instanceId != instanceId ||
+                                current->second.status != UdpAssociation::Status::Associating;
+                        })) {
+                    WSASetLastError(WSAETIMEDOUT);
+                    return false;
+                }
+                it = g_udpMap.find(s);
+                if (it == g_udpMap.end() || it->second.instanceId != instanceId) {
+                    WSASetLastError(WSAENOTSOCK);
+                    return false;
+                }
+            }
 
-        relayAddr = it->second.relayAddr;
-        controlSocket = it->second.ctrlSocket;
-        if (IsSocketDisconnected(controlSocket)) {
-            lock.unlock();
-            MarkUdpAssociationPending(s, controlSocket);
-            return false;
+            if (it->second.status != UdpAssociation::Status::Associated) {
+                if (RemainingTimeout(deadline) == 0) {
+                    WSASetLastError(WSAETIMEDOUT);
+                    return false;
+                }
+                if (!ActivateUdpRelay(s, lock, it, deadline)) {
+                    const int error = WSAGetLastError();
+                    LOG_WARN("udp %llu associate failed: wsa_error=%d", (ULONG_PTR)s, error);
+                    WSASetLastError(error);
+                    return false;
+                }
+                LOG_INFO("udp %llu associated, relay=%s", (ULONG_PTR)s, AddrToString(it->second.relayAddr).c_str());
+            }
+
+            relayAddr = it->second.relayAddr;
+            controlSocket = it->second.ctrlSocket;
+            if (!IsSocketDisconnected(controlSocket))
+                return true;
+
+            Hooks::Real_closesocket(controlSocket);
+            it->second.ctrlSocket = INVALID_SOCKET;
+            it->second.relayAddr = {};
+            it->second.status = UdpAssociation::Status::PendingAssociate;
+            g_pendingUdp.insert(s);
+            if (RemainingTimeout(deadline) == 0) {
+                WSASetLastError(WSAETIMEDOUT);
+                return false;
+            }
         }
-        return true;
     }
 
     int WSAAPI Mine_sendto(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen) {
@@ -420,7 +480,6 @@ namespace droute {
         sockaddr_in relayAddr = {};
         SOCKET controlSocket = INVALID_SOCKET;
         if (!GetUdpRelayForSend(s, relayAddr, controlSocket)) {
-            WSASetLastError(WSAEWOULDBLOCK);
             return SOCKET_ERROR;
         }
 
@@ -458,7 +517,6 @@ namespace droute {
         sockaddr_in relayAddr = {};
         SOCKET controlSocket = INVALID_SOCKET;
         if (!GetUdpRelayForSend(s, relayAddr, controlSocket)) {
-            WSASetLastError(WSAEWOULDBLOCK);
             return SOCKET_ERROR;
         }
 
@@ -755,6 +813,7 @@ namespace droute {
                 }
                 g_udpMap.erase(it);
                 g_pendingUdp.erase(s);
+                g_udpAssociationChanged.notify_all();
                 LOG_DEBUG("udp socket %llu cleaned", (ULONG_PTR)s);
             }
             g_nonBlockingSockets.erase(s);
