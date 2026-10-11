@@ -85,9 +85,15 @@ When Discord updates, it creates a folder with the new version number. Droute ho
 
 ### Settings & Logs
 - **Configuration:** All settings are stored in the Windows Registry at `HKCU/Software/droute` and can be tweaked via `regedit`.
-- **Logs:** `%LOCALAPPDATA%\droute\logs\<branch>\droute-YYYY-MM-DD.log` and `updater-YYYY-MM-DD.log` (`stable`, `canary`, or `ptb`; `unknown` for other hosts). Processes of a branch share one file per component and local calendar date. Files switch dates automatically on the next entry; old logs are retained.
-- **Detail level:** `LogLevel` (DWORD) in `HKCU\Software\droute`: `0` TRACE, `1` DEBUG, `2` INFO (default), `3` WARN, `4` ERROR. Both components use this setting at startup. INFO records lifecycle events and UDP summaries; DEBUG adds individual association attempts, SOCKS negotiation, routing decisions and installation stages; TRACE adds UDP operation registration and completion details.
+- **Logs:** Located at `%LOCALAPPDATA%\droute\logs\<branch>\droute-YYYY-MM-DD.log` and `updater-YYYY-MM-DD.log` (`stable`, `canary`, or `ptb`). Files automatically switch dates on a new day; old logs are retained.
+- **Log Level:** Controlled by the `LogLevel` (DWORD) value in `HKCU\Software\droute`:
+  - `0` — TRACE (all events and detailed UDP operations)
+  - `1` — DEBUG (association attempts, SOCKS negotiation)
+  - `2` — INFO (default: lifecycle events and UDP summaries)
+  - `3` — WARN
+  - `4` — ERROR
 
-Entries include PID, native TID, a process creation `SESSION` identifier and monotonic `UP` milliseconds since logger initialization. Correlate UDP records using `(SESSION, PID, flow)`; `socket` alone may be reused. `generation` increases on each successful association, while `attempt` counts initial and subsequent attempts. TCP connections have a separate `connection` identifier. Updater patch records use an `operation` identifier and report the stage, result, duration and full exception on failure. Packet contents, proxy credentials and command-line argument contents are not logged.
-
-The reconnect worker emits `udp.summary` at intervals of at least 10 seconds for activated sockets, including inactive ones, and a final `udp.close` snapshot at cleanup. Summaries contain cumulative proxy packet/byte counts, packet deltas over `interval_ms`, ages of the last completed send/receive (`-1` means none), outstanding intercepted operations, errors, Winsock would-block responses and sends blocked before reaching the relay. Repeated identical association failures move to DEBUG; attempt counts and the latest error remain in INFO summaries. The first successful proxy send and receive of each generation are recorded separately. A successful send means the local Winsock operation completed; it does not prove delivery to the proxy or remote server. Completion errors include the submitting API; TRACE also identifies the observed completion API. Logging failures fall back to debugger output.
+**Tips for Opening an Issue:**
+If you are reporting a connectivity or voice chat issue, please attach the relevant `.log` file from the day the problem occurred. 
+- Logs include session IDs (`SESSION`), process PIDs, and connection generations (`generation`) to help trace traffic flows.
+- For your privacy, proxy credentials, packet payloads, and command-line arguments are **never logged**.
