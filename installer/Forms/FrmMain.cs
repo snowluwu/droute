@@ -27,22 +27,29 @@ namespace Droute.Installer.Forms
 
         private void FrmMain_Load(object sender, EventArgs e)
         {
-            // -- Set values from Settings --
+            #region [ Set values from Registry Config ]
+
             hostTextBox.Text = _cfg.Host;
             portNumeric.Value = _cfg.Port;
             userTextBox.Text = _cfg.User;
             passwordTextBox.Text = _cfg.Password;
+
+            #endregion
 
             if (string.IsNullOrEmpty(_cfg.User) && string.IsNullOrEmpty(_cfg.Password))
                 authCheckBox.Checked = false;
 
             this.LoadDiscordActionSettings();
 
-            // -- Set Version in About tab --
+            #region [ Set Version (aboutTab) ]
+
             var versionInfo = new Version(Application.ProductVersion);
             versionLabel.Text = $"v. {versionInfo.Major}.{versionInfo.Minor}.{versionInfo.Build}";
 
-            // -- Set branches --
+            #endregion
+
+            #region [ Load Branches ]
+
             branchesComboBox.Items.Clear();
             branchesComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
 
@@ -61,6 +68,8 @@ namespace Droute.Installer.Forms
             branchesComboBox.SelectedItem = availableBranches[0];
 
             _selectedBranch = availableBranches[0];
+
+            #endregion
         }
 
         private void applyCfgButton_Click(object sender, EventArgs e)
@@ -100,21 +109,32 @@ namespace Droute.Installer.Forms
 
         private void openLogsButton_Click(object sender, EventArgs e)
         {
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string path = Path.Combine(localAppData, "Temp", "droute.log");
-
-            try { Process.Start(path); }
-            catch (Exception ex) { Trace.WriteLine($"error during open log file: {ex.ToString()}"); }
+            try
+            {
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (string.IsNullOrEmpty(localAppData))
+                    throw new DirectoryNotFoundException("LocalAppData is unavailable.");
+                string branch = GetSelectedBranch().ToString().ToLowerInvariant();
+                string path = Path.Combine(localAppData, "droute", "logs", branch);
+                Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"error opening logs folder: {ex}");
+                MessageBox.Show($"Unable to open the logs folder.\n\n{ex.Message}",
+                    "Droute: logs", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void installPatchButton_Click(object sender, EventArgs e)
         {
             this.ApplyConfig();
-            this.HandlePatchAction(FrmPatch.PatchAction.Install);
+            this.HandleAction(FrmPatch.PatchAction.Install);
         }
 
         private void removePatchButton_Click(object sender, EventArgs e) 
-            => this.HandlePatchAction(FrmPatch.PatchAction.Remove);
+            => this.HandleAction(FrmPatch.PatchAction.Remove);
 
         private void ApplyConfig()
         {
@@ -125,7 +145,7 @@ namespace Droute.Installer.Forms
             _cfg.Apply();
         }
 
-        private void HandlePatchAction(FrmPatch.PatchAction action)
+        private void HandleAction(FrmPatch.PatchAction action)
         {
             _selectedBranch = this.GetSelectedBranch();
 
@@ -175,7 +195,7 @@ namespace Droute.Installer.Forms
         {
             try
             {
-                if (DiscordTools.CloseAndWait(branch))
+                if (DiscordTools.CloseWait(branch))
                     return true;
 
                 MessageBox.Show("Discord did not exit in time. Close it manually and try again.",

@@ -1,7 +1,7 @@
-﻿using Droute.Core;
+using Droute.Core;
 using System;
 using System.IO;
-using System.Threading;
+using DrCore = Droute.Core.Droute;
 
 namespace Droute.Installer.Classes
 {
@@ -10,17 +10,8 @@ namespace Droute.Installer.Classes
         public static event Action<string> OnLog;
         public static event Action<int> OnProgressChanged;
 
-        private const string UPDATER_HOOK_DLL = "Droute.UpdaterHook.dll";
-        private const string UPDATER_CONFIG = "Update.exe.config";
-
         public static bool Install(DiscordManager.Branches branch)
         {
-            // staged files: .droute.[Guid].tmp
-            string proxyStagedPath = null;
-            string payloadStagedPath = null;
-            string updaterHookStagedPath = null;
-            string updaterConfigStagedPath = null;
-
             try
             {
                 OnLog?.Invoke($"[ STATUS ] Installation started for Discord {branch.ToString()}...");
@@ -28,99 +19,52 @@ namespace Droute.Installer.Classes
 
                 OnLog?.Invoke("[ STAGE ] Initializing and verifying paths...");
 
-                // get discord root
                 string branchRoot = DiscordManager.GetBranchRoot(branch);
                 if (string.IsNullOrEmpty(branchRoot) || !Directory.Exists(branchRoot))
-                    throw new DirectoryNotFoundException($"Branch Root directory not found");
+                    throw new DirectoryNotFoundException("Branch Root directory not found");
 
-                // get discord app direcory
                 string appDirectory = DiscordManager.GetLastVersionPath(branchRoot);
                 if (string.IsNullOrEmpty(appDirectory) || !Directory.Exists(appDirectory))
-                    throw new DirectoryNotFoundException($"App directory not found");
+                    throw new DirectoryNotFoundException("App directory not found");
 
-                // get paths for release droute.dll and version.dll
-                string proxyPath = Path.Combine(appDirectory, PatchManager.MAIN_PROXY_DLL);
-                string payloadPath = Path.Combine(appDirectory, PatchManager.MAIN_PAYLOAD_DLL);
-
-                // get path for Squirrel Updater
-                string updaterPath = Path.Combine(branchRoot, "Update.exe");
+                string updaterPath = DrCore.GetUpdaterPath(branchRoot);
                 if (string.IsNullOrEmpty(updaterPath) || !File.Exists(updaterPath))
-                    throw new FileNotFoundException($"Update.exe not found");
+                    throw new FileNotFoundException("Update.exe not found");
 
-                // get paths for Droute.UpdaterHook.dll and Update.exe.config
-                string updaterHookPath = Path.Combine(branchRoot, UPDATER_HOOK_DLL);
-                string updaterConfigPath = Path.Combine(branchRoot, UPDATER_CONFIG);
-
-                // waiting for droute files to be released, else throw error
-                WaitForFilesAvailable(new[]
+                PatchManager.WaitForFilesAvailable(new[]
                 {
-                    proxyPath,
-                    payloadPath,
-                    updaterHookPath,
-                    updaterConfigPath
+                    DrCore.GetProxyPath(appDirectory),
+                    DrCore.GetPayloadPath(appDirectory),
+                    DrCore.GetUpdaterHookPath(branchRoot),
+                    DrCore.GetUpdaterConfigPath(branchRoot)
                 }, 5000);
-
-                // make staging suffix
-                string stagingSuffix = $".droute.{Guid.NewGuid():N}.tmp";
-
-                // make staging paths for all droute files
-                proxyStagedPath = proxyPath + stagingSuffix;
-                payloadStagedPath = payloadPath + stagingSuffix;
-                updaterHookStagedPath = updaterHookPath + stagingSuffix;
-                updaterConfigStagedPath = updaterConfigPath + stagingSuffix;
 
                 OnLog?.Invoke("[ OK ] All target environment paths verified successfully!");
                 OnProgressChanged?.Invoke(15);
 
                 OnLog?.Invoke("[ STAGE ] Deploying...");
-                
-                // duplicate version.dll to version.{stagingSuffix} in discord app folder
-                OnLog?.Invoke($"[ > ] Preparing system proxy: {PatchManager.MAIN_PROXY_DLL}...");
-                PatchManager.DuplicateProxy(proxyStagedPath);
-                OnProgressChanged?.Invoke(30);
-
-                // patch version.dll.{stagingSuffix} import tables
-                OnLog?.Invoke($"[ > ] Applying Import Tables to: {PatchManager.MAIN_PROXY_DLL}...");
-                PatchManager.ApplyPEPatch(proxyStagedPath);
-                OnProgressChanged?.Invoke(45);
-
-                // write droute.dll.{stagingSuffix} on disk
-                OnLog?.Invoke($"[ > ] Preparing payload: {PatchManager.MAIN_PAYLOAD_DLL}...");
-                File.WriteAllBytes(payloadStagedPath, Properties.Resources.Droute64);
-                OnProgressChanged?.Invoke(60);
-
-                OnLog?.Invoke($"[ STAGE ] Configuring Squirrel Update hooks...");
-
-                // write Update.exe.config.{stagingSuffix}
-                OnLog?.Invoke($"[ > ] Preparing configuration: {UPDATER_CONFIG}...");
-                File.WriteAllText(updaterConfigStagedPath, Properties.Resources.UpdaterConfig);
-                OnProgressChanged?.Invoke(75);
-
-                // write Droute.UpdaterHook.dll.{stagingSuffix} on disk
-                OnLog?.Invoke($"[ > ] Preparing UpdaterHook: {UPDATER_HOOK_DLL}...");
-                File.WriteAllBytes(updaterHookStagedPath, Properties.Resources.UpdaterHook);
-                OnProgressChanged?.Invoke(90);
-
                 OnLog?.Invoke("[ STAGE ] Publishing prepared files...");
 
-                // replace droute.dll.{stagingSuffix} to droute.dll
-                PatchManager.PublishStagedFile(payloadStagedPath, payloadPath);
-                payloadStagedPath = null;
+                OnLog?.Invoke($"[ > ] Preparing system proxy: {PatchManager.MAIN_PROXY_DLL}...");
+                OnProgressChanged?.Invoke(30);
 
-                // replace Droute.UpdaterHook.dll.{stagingSuffix} to Droute.UpdaterHook.dll
-                PatchManager.PublishStagedFile(updaterHookStagedPath, updaterHookPath);
-                updaterHookStagedPath = null;
+                OnLog?.Invoke($"[ > ] Applying Import Tables to: {PatchManager.MAIN_PROXY_DLL}...");
+                OnProgressChanged?.Invoke(45);
 
-                // replace version.dll.{stagingSuffix} to version.dll
-                PatchManager.PublishStagedFile(proxyStagedPath, proxyPath);
-                proxyStagedPath = null;
+                OnLog?.Invoke($"[ > ] Preparing payload: {PatchManager.MAIN_PAYLOAD_DLL}...");
+                DrCore.Install(appDirectory, Properties.Resources.Droute64);
+                OnProgressChanged?.Invoke(60);
 
-                // replace Update.exe.config.{stagingSuffix} to Update.exe.config
-                PatchManager.PublishStagedFile(updaterConfigStagedPath, updaterConfigPath);
-                updaterConfigStagedPath = null;
+                OnLog?.Invoke("[ STAGE ] Configuring Squirrel Update hooks...");
 
-                // installation completed, yapii >3
-                OnLog?.Invoke($"[ STATUS ] Installation successfully completed!");
+                OnLog?.Invoke($"[ > ] Preparing configuration: {DrCore.UPDATER_CONFIG}...");
+                OnProgressChanged?.Invoke(75);
+
+                OnLog?.Invoke($"[ > ] Preparing UpdaterHook: {DrCore.UPDATER_HOOK_DLL}...");
+                DrCore.InstallUpdaterHook(branchRoot, Properties.Resources.UpdaterHook, Properties.Resources.UpdaterConfig);
+                OnProgressChanged?.Invoke(90);
+
+                OnLog?.Invoke("[ STATUS ] Installation successfully completed!");
                 OnProgressChanged?.Invoke(100);
 
                 return true;
@@ -131,56 +75,6 @@ namespace Droute.Installer.Classes
                 OnProgressChanged?.Invoke(100);
                 return false;
             }
-            finally
-            {
-                // delete all staged files
-                PatchManager.DeleteStagedFile(proxyStagedPath);
-                PatchManager.DeleteStagedFile(payloadStagedPath);
-                PatchManager.DeleteStagedFile(updaterHookStagedPath);
-                PatchManager.DeleteStagedFile(updaterConfigStagedPath);
-            }
-        }
-
-        private static void WaitForFilesAvailable(string[] paths, int timeoutMilliseconds)
-        {
-            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
-            Exception lastException = null;
-
-            do
-            {
-                bool allAvailable = true;
-
-                foreach (string path in paths)
-                {
-                    if (!File.Exists(path))
-                        continue;
-
-                    try
-                    {
-                        using (File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
-                    }
-                    catch (IOException ex)
-                    {
-                        allAvailable = false;
-                        lastException = ex;
-                        break;
-                    }
-                    catch (UnauthorizedAccessException ex)
-                    {
-                        allAvailable = false;
-                        lastException = ex;
-                        break;
-                    }
-                }
-
-                if (allAvailable)
-                    return;
-
-                Thread.Sleep(100);
-            }
-            while (DateTime.UtcNow < deadline);
-
-            throw new IOException("One or more Droute target files are still in use.", lastException);
         }
 
         public static bool Remove(DiscordManager.Branches branch)
@@ -198,47 +92,41 @@ namespace Droute.Installer.Classes
                     return true;
                 }
 
-                string updaterHookPath = Path.Combine(branchRoot, UPDATER_HOOK_DLL);
-                string updaterConfigPath = Path.Combine(branchRoot, UPDATER_CONFIG);
-
                 OnLog?.Invoke("[ STAGE ] Cleaning up Squirrel Update hooks...");
 
-                if (File.Exists(updaterHookPath))
-                {
-                    OnLog?.Invoke($"[ < ] Removing: {UPDATER_HOOK_DLL}...");
-                    File.Delete(updaterHookPath);
-                }
+                if (File.Exists(DrCore.GetUpdaterHookPath(branchRoot)))
+                    OnLog?.Invoke($"[ < ] Removing: {DrCore.UPDATER_HOOK_DLL}...");
                 OnProgressChanged?.Invoke(30);
 
-                if (File.Exists(updaterConfigPath))
-                {
-                    OnLog?.Invoke($"[ < ] Removing: {UPDATER_CONFIG}...");
-                    File.Delete(updaterConfigPath);
-                }
+                if (File.Exists(DrCore.GetUpdaterConfigPath(branchRoot)))
+                    OnLog?.Invoke($"[ < ] Removing: {DrCore.UPDATER_CONFIG}...");
+
+                DrCore.RemoveUpdaterHook(branchRoot);
                 OnProgressChanged?.Invoke(50);
 
-                string appDirectory = DiscordManager.GetLastVersionPath(branchRoot);
-                if (!string.IsNullOrEmpty(appDirectory) && Directory.Exists(appDirectory))
+                try
                 {
-                    string proxyPath = Path.Combine(appDirectory, PatchManager.MAIN_PROXY_DLL);
-                    string payloadPath = Path.Combine(appDirectory, PatchManager.MAIN_PAYLOAD_DLL);
+                    string appDirectory = DiscordManager.GetLastVersionPath(branchRoot);
 
-                    OnLog?.Invoke("[ STAGE ] Cleaning up...");
-
-                    if (File.Exists(proxyPath))
+                    if (!string.IsNullOrEmpty(appDirectory) && Directory.Exists(appDirectory))
                     {
-                        OnLog?.Invoke($"[ < ] Deleting modified proxy: {PatchManager.MAIN_PROXY_DLL}...");
-                        File.Delete(proxyPath);
+                        OnLog?.Invoke("[ STAGE ] Cleaning up...");
+
+                        if (File.Exists(DrCore.GetProxyPath(appDirectory)))
+                            OnLog?.Invoke($"[ < ] Deleting modified proxy: {PatchManager.MAIN_PROXY_DLL}...");
+                        OnProgressChanged?.Invoke(75);
+
+                        if (File.Exists(DrCore.GetPayloadPath(appDirectory)))
+                            OnLog?.Invoke($"[ < ] Deleting payload: {PatchManager.MAIN_PAYLOAD_DLL}...");
+
+                        DrCore.Remove(appDirectory);
                     }
-                    OnProgressChanged?.Invoke(75);
-
-                    if (File.Exists(payloadPath))
+                    else
                     {
-                        OnLog?.Invoke($"[ < ] Deleting payload: {PatchManager.MAIN_PAYLOAD_DLL}...");
-                        File.Delete(payloadPath);
+                        OnLog?.Invoke("[ INFO ] Application version directory not found, skipping core payload cleanup.");
                     }
                 }
-                else
+                catch (DirectoryNotFoundException)
                 {
                     OnLog?.Invoke("[ INFO ] Application version directory not found, skipping core payload cleanup.");
                 }

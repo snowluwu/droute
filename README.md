@@ -8,7 +8,7 @@
   <a href="https://github.com/snowluwu/droute/releases"><img src="https://img.shields.io/github/v/release/snowluwu/droute?style=for-the-badge&label=Release&labelColor=3A3A3A&color=5662f6" alt="Release"></a>
 </p>
 
-**Droute** adds SOCKS5 proxy support to the Discord desktop client on Windows for chat, media, voice calls and screen sharing.
+**Droute** adds SOCKS5 proxy support to the Discord Desktop Client on Windows for chat, media, voice calls and screen sharing.
 
 Inspired by [force-proxy](https://github.com/runetfreedom/force-proxy). Uses [MinHook](https://github.com/tsudakageyu/minhook) to intercept network calls.
 

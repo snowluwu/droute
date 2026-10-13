@@ -1,8 +1,5 @@
 #include "pch.h"
 #include "src/core/utils.hpp"
-#include "src/core/config.hpp"
-#include "src/core/logger.hpp"
-
 namespace droute {
 
     bool IsLocalAddr(const sockaddr_in& addr) {
@@ -37,7 +34,50 @@ namespace droute {
                a.sin_port == b.sin_port;
     }
 
+    bool IsSocketDisconnected(SOCKET s, int* error, const char** reason) {
+        if (error) *error = 0;
+        if (reason) *reason = "connected";
+        if (s == INVALID_SOCKET) {
+            if (reason) *reason = "invalid_control_socket";
+            return true;
+        }
+
+        fd_set readable;
+        FD_ZERO(&readable);
+        FD_SET(s, &readable);
+
+        timeval timeout = {};
+        int result = select(0, &readable, nullptr, nullptr, &timeout);
+        if (result == 0)
+            return false;
+        if (result == SOCKET_ERROR) {
+            if (error) *error = WSAGetLastError();
+            if (reason) *reason = "control_select_failed";
+            return true;
+        }
+
+        char byte = 0;
+        result = recv(s, &byte, 1, MSG_PEEK);
+        if (result > 0)
+            return false;
+        if (result == 0) {
+            if (reason) *reason = "control_peer_closed";
+            return true;
+        }
+
+        const int socketError = WSAGetLastError();
+        if (socketError == WSAEWOULDBLOCK) return false;
+        if (error) *error = socketError;
+        if (reason) *reason = "control_recv_failed";
+        return true;
+    }
+
     bool WaitForSocket(SOCKET s, bool write, int timeoutMs) {
+        if (timeoutMs <= 0) {
+            WSASetLastError(WSAETIMEDOUT);
+            return false;
+        }
+
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(s, &fds);
@@ -47,7 +87,11 @@ namespace droute {
         tv.tv_usec = (timeoutMs % 1000) * 1000;
 
         int r = select(0, write ? nullptr : &fds, write ? &fds : nullptr, nullptr, &tv);
-        return (r > 0 && FD_ISSET(s, &fds));
+        if (r == 0) {
+            WSASetLastError(WSAETIMEDOUT);
+            return false;
+        }
+        return r > 0 && FD_ISSET(s, &fds);
     }
 
     bool WaitForWrite(SOCKET s, int timeoutMs) {
@@ -58,22 +102,65 @@ namespace droute {
         return WaitForSocket(s, false, timeoutMs);
     }
 
+    bool WaitForConnect(SOCKET s, int timeoutMs) {
+        if (timeoutMs <= 0) {
+            WSASetLastError(WSAETIMEDOUT);
+            return false;
+        }
+
+        fd_set writable;
+        fd_set exceptional;
+        FD_ZERO(&writable);
+        FD_ZERO(&exceptional);
+        FD_SET(s, &writable);
+        FD_SET(s, &exceptional);
+
+        timeval tv;
+        tv.tv_sec = timeoutMs / 1000;
+        tv.tv_usec = (timeoutMs % 1000) * 1000;
+
+        int result = select(0, nullptr, &writable, &exceptional, &tv);
+        if (result == 0) {
+            WSASetLastError(WSAETIMEDOUT);
+            return false;
+        }
+        return result > 0 && (FD_ISSET(s, &writable) || FD_ISSET(s, &exceptional));
+    }
+
     bool SetNonBlocking(SOCKET s, bool nonBlock) {
         u_long mode = nonBlock ? 1 : 0;
         return ioctlsocket(s, FIONBIO, &mode) == NO_ERROR;
     }
 
-    bool SendAll(SOCKET s, const void* data, int len) {
+    uint64_t MakeDeadline(uint32_t timeoutMs) {
+        return GetTickCount64() + timeoutMs;
+    }
+
+    int RemainingTimeout(uint64_t deadline) {
+        const uint64_t now = GetTickCount64();
+        if (now >= deadline)
+            return 0;
+
+        const uint64_t remaining = deadline - now;
+        return remaining > static_cast<uint64_t>(INT_MAX)
+            ? INT_MAX
+            : static_cast<int>(remaining);
+    }
+
+    bool SendAll(SOCKET s, const void* data, int len, uint64_t deadline) {
         const char* p = static_cast<const char*>(data);
         int sent = 0;
         while (sent < len) {
             int n = ::send(s, p + sent, len - sent, 0);
             if (n > 0) {
                 sent += n;
+            } else if (n == 0) {
+                WSASetLastError(WSAECONNRESET);
+                return false;
             } else {
                 int err = WSAGetLastError();
                 if (err == WSAEWOULDBLOCK) {
-                    if (!WaitForWrite(s, g_cfg.connectTimeout))
+                    if (!WaitForWrite(s, RemainingTimeout(deadline)))
                         return false;
                 } else {
                     return false;
@@ -83,7 +170,7 @@ namespace droute {
         return true;
     }
 
-    bool RecvAll(SOCKET s, void* buf, int len) {
+    bool RecvAll(SOCKET s, void* buf, int len, uint64_t deadline) {
         char* p = static_cast<char*>(buf);
         int recvd = 0;
         while (recvd < len) {
@@ -91,11 +178,12 @@ namespace droute {
             if (n > 0) {
                 recvd += n;
             } else if (n == 0) {
+                WSASetLastError(WSAECONNRESET);
                 return false;
             } else {
                 int err = WSAGetLastError();
                 if (err == WSAEWOULDBLOCK) {
-                    if (!WaitForRead(s, g_cfg.connectTimeout))
+                    if (!WaitForRead(s, RemainingTimeout(deadline)))
                         return false;
                 } else {
                     return false;

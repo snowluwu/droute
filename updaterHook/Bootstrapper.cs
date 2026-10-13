@@ -1,8 +1,10 @@
 ﻿using Droute.Core;
 using HarmonyLib;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using CoreDroute = Droute.Core.Droute;
 
 namespace Droute.UpdaterHook
 {
@@ -13,11 +15,11 @@ namespace Droute.UpdaterHook
             try
             {
                 AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoad;
-                Logger.Debug("domain initialized, subscribing to assembly load events");
+                Logger.Info($"event=updater.domain.ready domain={AppDomain.CurrentDomain.Id} name=\"{AppDomain.CurrentDomain.FriendlyName}\" action=subscribe_assembly_load");
             }
             catch (Exception ex) 
             {
-                Logger.Error($"failed to initialize domain manager: {ex.Message}");
+                Logger.Error($"event=updater.domain.failed exception={ex}");
             }
         }
 
@@ -33,7 +35,7 @@ namespace Droute.UpdaterHook
                 if (name.Equals("Update.exe", StringComparison.OrdinalIgnoreCase))
                 {
                     AppDomain.CurrentDomain.AssemblyLoad -= OnAssemblyLoad;
-                    Logger.Info("Update.exe loaded, preparing patches");
+                    Logger.Info($"event=updater.assembly.loaded assembly=\"{args.LoadedAssembly.FullName}\" path=\"{args.LoadedAssembly.Location}\"");
 
                     Type type = args.LoadedAssembly.GetType("Squirrel.Update.Program");
                     if (type == null)
@@ -54,7 +56,7 @@ namespace Droute.UpdaterHook
                         BindingFlags.Static | BindingFlags.Public);
                     if (prefixMethod == null)
                     {
-                        Logger.Error("detour method \"MyProcessStart]\" not found in hook assembly");
+                        Logger.Error("detour method \"MyProcessStart\" not found in hook assembly");
                         return;
                     }
 
@@ -63,122 +65,82 @@ namespace Droute.UpdaterHook
                     var harmony = new Harmony("Droute.UpdaterHook");
                     harmony.Patch(baseMethod, prefix: new HarmonyMethod(prefixMethod));
 
-                    Logger.Info("hooks successfully installed");
+                    Logger.Info($"event=updater.hooks.ready target=\"{baseMethod.DeclaringType.FullName}.{baseMethod.Name}\" harmony_version={typeof(Harmony).Assembly.GetName().Version}");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Error($"exception during assembly load interception: {ex.Message}");
+                Logger.Error($"event=updater.hooks.failed exception={ex}");
             }
         }
 
         public static bool MyProcessStart(object __instance, string exeName, string arguments, bool shouldWait)
         {
-            Logger.Trace($"ProcessStart triggered: exeName=\"{exeName}\", args=\"{arguments}\", wait={shouldWait}");
+            Logger.Debug($"event=updater.launch.request executable=\"{exeName}\" arguments_length={arguments?.Length ?? 0} wait={shouldWait}");
 
             string branchRoot = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            if (!IsTargetDiscordExecutable(branchRoot, exeName))
+            if (!CoreDroute.IsTargetExecutable(branchRoot, exeName))
             {
                 Logger.Debug($"skipping non-Discord process: {exeName}");
                 return true;
             }
 
-            // staged paths: .droute.[Guid].tmp
-            string proxyStagedPath = null;
-            string drouteStagedPath = null;
+            string operation = Guid.NewGuid().ToString("N");
+            var clock = Stopwatch.StartNew();
+            string stage = "resolve_app_directory";
+            string outcome = "failed";
+            Logger.Info($"event=updater.patch.start operation={operation} root=\"{branchRoot}\" executable=\"{exeName}\"");
 
             try
             {
                 if (string.IsNullOrEmpty(branchRoot))
                 {
-                    Logger.Error("AppContext.BaseDirectory returned null or empty");
+                    Logger.Error($"event=updater.patch.invalid_root operation={operation} root=\"{branchRoot}\"");
                     return true;
                 }
 
-                Logger.Debug($"resolving last version path from: {branchRoot}");
                 string appDirectory = DiscordManager.GetLastVersionPath(branchRoot);
-
                 if (string.IsNullOrEmpty(appDirectory) || !Directory.Exists(appDirectory))
                 {
-                    Logger.Error($"resolved app directory is invalid or missing: {appDirectory}");
+                    Logger.Error($"event=updater.patch.invalid_directory operation={operation} directory=\"{appDirectory}\"");
                     return true;
                 }
 
-                Logger.Info($"target app directory: {appDirectory}");
-
-                string proxyPath = Path.Combine(appDirectory, PatchManager.MAIN_PROXY_DLL);
-                string droutePath = Path.Combine(appDirectory, "droute.dll");
-
-                // make staged paths
-                string stagingSuffix = $".droute.{Guid.NewGuid():N}.tmp";
-                proxyStagedPath = proxyPath + stagingSuffix;
-                drouteStagedPath = droutePath + stagingSuffix;
-
-                if (File.Exists(proxyPath) && File.Exists(droutePath)) 
+                Logger.Info($"event=updater.patch.target operation={operation} directory=\"{appDirectory}\"");
+                string proxyPath = CoreDroute.GetProxyPath(appDirectory);
+                string payloadPath = CoreDroute.GetPayloadPath(appDirectory);
+                Logger.Info($"event=updater.patch.inspect operation={operation} proxy=\"{proxyPath}\" proxy_exists={File.Exists(proxyPath)} payload=\"{payloadPath}\" payload_exists={File.Exists(payloadPath)}");
+                if (CoreDroute.IsInstalled(appDirectory))
                 {
-                    Logger.Info("patch already been applied, skip installation.");
+                    outcome = "skipped_existing_files";
                     return true;
                 }
 
-                Logger.Info($"duplicating {PatchManager.MAIN_PROXY_DLL} to: {proxyPath}");
-
-                // duplicate version.dll to version.{stagingSuffix}
-                PatchManager.DuplicateProxy(proxyStagedPath);
-
-                // apply patch for version.dll.{stagingSuffix}
-                Logger.Info("applying PE patch...");
-                PatchManager.ApplyPEPatch(proxyStagedPath);
-
-                // write main payload to droute.dll.{stagingSuffix}
-                Logger.Info("preparing droute.dll payload...");
-                File.WriteAllBytes(drouteStagedPath, Properties.Resources.Droute64);
-
-                // publish droute.dll (remove staging suffix)
-                Logger.Info("publishing prepared patch files...");
-                PatchManager.PublishStagedFile(drouteStagedPath, droutePath);
-                drouteStagedPath = null;
-
-                // publish version.dll
-                PatchManager.PublishStagedFile(proxyStagedPath, proxyPath);
-                proxyStagedPath = null;
-
-                Logger.Debug("patching completed successfully!");
+                stage = "install";
+                CoreDroute.Install(appDirectory, Properties.Resources.Droute64, (installStage, details) =>
+                {
+                    if (installStage == "cleanup_failed")
+                    {
+                        Logger.Warning($"event=updater.patch.cleanup_failed operation={operation} {details}");
+                    }
+                    else
+                    {
+                        if (installStage != "cleanup") stage = installStage;
+                        Logger.Debug($"event=updater.patch.stage operation={operation} stage={installStage} {details}");
+                    }
+                });
+                outcome = "installed";
             }
             catch (Exception ex)
             {
-                Logger.Error($"unexpected exception in MyProcessStart: {ex.Message}");
-                Logger.Trace($"stack trace: {ex.StackTrace}");
+                Logger.Error($"event=updater.patch.failed operation={operation} stage={stage} elapsed_ms={clock.ElapsedMilliseconds} exception={ex}");
             }
             finally
             {
-                PatchManager.DeleteStagedFile(proxyStagedPath);
-                PatchManager.DeleteStagedFile(drouteStagedPath);
+                Logger.Info($"event=updater.patch.finish operation={operation} outcome={outcome} stage={stage} elapsed_ms={clock.ElapsedMilliseconds} launch_action=continue");
             }
 
             return true;
-        }
-
-        private static bool IsTargetDiscordExecutable(string branchRoot, string exeName)
-        {
-            if (string.IsNullOrEmpty(branchRoot) || string.IsNullOrWhiteSpace(exeName))
-                return false;
-
-            string branchName = Path.GetFileName(branchRoot.TrimEnd(
-                Path.DirectorySeparatorChar,
-                Path.AltDirectorySeparatorChar));
-
-            string expectedExecutable;
-            if (branchName.Equals("Discord", StringComparison.OrdinalIgnoreCase))
-                expectedExecutable = "Discord.exe";
-            else if (branchName.Equals("DiscordCanary", StringComparison.OrdinalIgnoreCase))
-                expectedExecutable = "DiscordCanary.exe";
-            else if (branchName.Equals("DiscordPTB", StringComparison.OrdinalIgnoreCase))
-                expectedExecutable = "DiscordPTB.exe";
-            else
-                return false;
-
-            string executableName = Path.GetFileName(exeName.Trim().Trim('"'));
-            return expectedExecutable.Equals(executableName, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

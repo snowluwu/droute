@@ -4,7 +4,7 @@ using AsmResolver.PE.File;
 using AsmResolver.PE.Imports;
 using System;
 using System.IO;
-using File = System.IO.File;
+using System.Threading;
 
 namespace Droute.Core
 {
@@ -103,6 +103,54 @@ namespace Droute.Core
 
             try { if (File.Exists(path)) File.Delete(path); }
             catch { }
+        }
+
+        public static void WaitForFilesAvailable(string[] paths, int timeoutMilliseconds)
+        {
+            if (paths == null)
+                throw new ArgumentNullException(nameof(paths));
+
+            if (timeoutMilliseconds < 0)
+                throw new ArgumentOutOfRangeException(nameof(timeoutMilliseconds));
+
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+            Exception lastException = null;
+
+            do
+            {
+                bool allAvailable = true;
+
+                foreach (string path in paths)
+                {
+                    if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                        continue;
+
+                    try
+                    {
+                        using (File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+                    }
+                    catch (IOException ex)
+                    {
+                        allAvailable = false;
+                        lastException = ex;
+                        break;
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        allAvailable = false;
+                        lastException = ex;
+                        break;
+                    }
+                }
+
+                if (allAvailable)
+                    return;
+
+                Thread.Sleep(100);
+            }
+            while (DateTime.UtcNow < deadline);
+
+            throw new IOException("One or more Droute target files are still in use.", lastException);
         }
     }
 }

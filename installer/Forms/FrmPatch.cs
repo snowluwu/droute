@@ -21,17 +21,15 @@ namespace Droute.Installer.Forms
             InitializeComponent();
 
             _action = action;
-            this.SelectedBranch = branch;
 
+            this.SelectedBranch = branch;
             this.Text = _action == PatchAction.Install ? "Droute: Installing Patch..." : "Droute: Removing Patch...";
         }
 
         private async void FrmPatch_Shown(object sender, EventArgs e)
-        {
-            await ExecutePatchOperation();
-        }
+            => await ExecuteOperation();
 
-        private async Task ExecutePatchOperation()
+        private async Task ExecuteOperation()
         {
             _isWorking = true;
 

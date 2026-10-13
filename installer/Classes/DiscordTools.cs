@@ -7,7 +7,7 @@ namespace Droute.Installer.Classes
 {
     internal static class DiscordTools
     {
-        public static bool CloseAndWait(DiscordManager.Branches branch, int timeoutMs = 5000, int retryIntervalMs = 150)
+        public static bool CloseWait(DiscordManager.Branches branch, int timeoutMs = 5000, int retryIntervalMs = 150)
         {
             if (timeoutMs < 0)
                 throw new ArgumentOutOfRangeException(nameof(timeoutMs));
