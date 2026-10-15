@@ -70,7 +70,6 @@ namespace Droute.UpdaterHook
             }
             catch (Exception ex)
             {
-                // Logging failures must remain visible without interrupting the updater.
                 System.Diagnostics.Trace.WriteLine("droute updater logging initialization failed: " + ex);
             }
         }
@@ -96,7 +95,7 @@ namespace Droute.UpdaterHook
                 lock (Sync)
                 {
                     DateTime now = DateTime.Now;
-                    // Keep exceptions, including inner exceptions and stacks, in one log record.
+                    // keep multiline exceptions in a single log record.
                     string text = (message ?? "").Replace("\r", "\\r").Replace("\n", "\\n");
                     record = $"[{now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)}] " +
                         $"[PID:{_pid}] [TID:{GetCurrentThreadId()}] [SESSION:{_session}] [UP:{Clock.ElapsedMilliseconds}] " +

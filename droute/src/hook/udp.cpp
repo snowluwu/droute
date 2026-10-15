@@ -604,10 +604,8 @@ namespace droute {
             return false;
         };
 
-        // a disappearing relay port can generate ICMP Port Unreachable before
-        // the control TCP disconnect is detected. do not let that abort Discord's
-        // pending receive (including IOCP); the worker monitors the control TCP
-        // connection and recreates the association independently.
+        // ignore ICMP port errors so a vanished relay does not abort pending receives.
+        // detect disconnects through the control TCP connection instead.
         if (!it->second.suppressUdpConnReset) {
             BOOL reportReset = FALSE;
             DWORD returned = 0;
@@ -622,9 +620,7 @@ namespace droute {
         }
 
         for (;;) {
-            // WSAEWOULDBLOCK would tell the client to wait for socket readiness.
-            // a socks handshake is not socket backpressure and cannot produce
-            // that notification. wait for the existing attempt instead.
+            // wait for association: a synthetic WSAEWOULDBLOCK has no readiness event.
             if (it->second.status == UdpAssociation::Status::Associating) {
                 const int remaining = RemainingTimeout(deadline);
                 if (remaining == 0 || !g_udpAssociationChanged.wait_for(
@@ -993,8 +989,7 @@ namespace droute {
     static BOOL FinishKernelOverlappedResult(BOOL result, DWORD error,
                                              LPOVERLAPPED overlapped,
                                              LPDWORD bytesTransferred, const char* api) {
-        // A timed-out or interrupted wait does not complete or cancel the I/O.
-        // keep its buffers alive and leave the eventual completion registered.
+        // a timeout or interrupted wait leaves I/O pending; keep its buffers alive.
         if (!result && (error == ERROR_IO_INCOMPLETE || error == WAIT_TIMEOUT ||
                         error == WAIT_IO_COMPLETION)) {
             SetLastError(error);
@@ -1079,7 +1074,7 @@ namespace droute {
         resultError.error = GetLastError();
         if (result == 0) {
             std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-            // Even cancelling notifications leaves the socket nonblocking.
+            // cancelling notifications leaves the socket nonblocking.
             g_nonBlockingSockets.insert(s);
         }
         LOG_DEBUG("event=socket.notification socket=%llu api=WSAEventSelect event=%p mask=0x%lX result=%d wsa_error=%d",
