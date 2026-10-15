@@ -16,7 +16,7 @@ namespace droute {
         char text[2500];
     };
     
-    // fixed storage and native handles have no destructors racing process teardown.
+    // fixed queue storage avoids destructor races during process exit.
     static std::array<LogRecord, QUEUE_CAPACITY> g_queue;
     static SRWLOCK g_queueLock = SRWLOCK_INIT;
     static size_t g_queueHead = 0, g_queueSize = 0;
@@ -87,7 +87,7 @@ namespace droute {
         return true;
     }
 
-    // only the writer thread accesses file handles, paths and daily rotation.
+    // file state is owned by the writer thread.
     static bool OpenDailyLog(const SYSTEMTIME& st) {
         const DWORD date = st.wYear * 10000UL + st.wMonth * 100UL + st.wDay;
         if (g_logFile != INVALID_HANDLE_VALUE && g_logDate == date) return true;
@@ -178,7 +178,7 @@ namespace droute {
                 slot.length = record.length;
                 memcpy(slot.text, record.text, record.length + 1);
                 ++g_queueSize;
-                // signal before releasing the lock so shutdown cannot close this handle underneath us.
+                // signal under the lock to prevent Shutdown from closing the event first.
                 SetEvent(g_queueEvent);
             }
         }
@@ -257,7 +257,6 @@ namespace droute {
 
     bool Logger::Init() {
         ErrorScope errorScope;
-        // process-lifetime logger: repeated initialization never spawns another writer.
         if (g_startedAt) return g_accepting.load(std::memory_order_acquire);
         g_startedAt = GetTickCount64();
         FILETIME created = {}, exited = {}, kernel = {}, user = {};
@@ -288,7 +287,7 @@ namespace droute {
             ? static_cast<DWORD>((std::min)(length, static_cast<int>(sizeof(header.text) - 1))) : 0;
         g_accepting.store(true, std::memory_order_release);
         Enqueue(header);
-        // dllmain starts the thread but never waits for it; file I/O runs after loader lock is released.
+        // do not wait under DllMain: the writer starts after the loader lock is released.
         g_writerThread = CreateThread(nullptr, 0, WriterMain, nullptr, 0, nullptr);
         if (!g_writerThread) {
             g_accepting.store(false, std::memory_order_release);
@@ -306,7 +305,6 @@ namespace droute {
         g_accepting.store(false, std::memory_order_release);
         if (g_queueEvent) SetEvent(g_queueEvent);
         ReleaseSRWLockExclusive(&g_queueLock);
-        // called only outside DllMain. a slow disk must not force an unbounded shutdown wait.
         if (g_writerThread && WaitForSingleObject(g_writerThread, 1000) == WAIT_OBJECT_0) {
             CloseHandle(g_writerThread);
             g_writerThread = nullptr;

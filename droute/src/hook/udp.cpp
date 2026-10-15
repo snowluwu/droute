@@ -604,10 +604,8 @@ namespace droute {
             return false;
         };
 
-        // a disappearing relay port can generate ICMP Port Unreachable before
-        // the control TCP disconnect is detected. do not let that abort Discord's
-        // pending receive (including IOCP); the worker monitors the control TCP
-        // connection and recreates the association independently.
+        // ignore ICMP port errors so a vanished relay does not abort pending receives.
+        // detect disconnects through the control TCP connection instead.
         if (!it->second.suppressUdpConnReset) {
             BOOL reportReset = FALSE;
             DWORD returned = 0;
@@ -622,9 +620,7 @@ namespace droute {
         }
 
         for (;;) {
-            // WSAEWOULDBLOCK would tell the client to wait for socket readiness.
-            // a socks handshake is not socket backpressure and cannot produce
-            // that notification. wait for the existing attempt instead.
+            // wait for association: a synthetic WSAEWOULDBLOCK has no readiness event.
             if (it->second.status == UdpAssociation::Status::Associating) {
                 const int remaining = RemainingTimeout(deadline);
                 if (remaining == 0 || !g_udpAssociationChanged.wait_for(
@@ -993,7 +989,9 @@ namespace droute {
     static BOOL FinishKernelOverlappedResult(BOOL result, DWORD error,
                                              LPOVERLAPPED overlapped,
                                              LPDWORD bytesTransferred, const char* api) {
-        if (!result && error == ERROR_IO_INCOMPLETE) {
+        // a timeout or interrupted wait leaves I/O pending; keep its buffers alive.
+        if (!result && (error == ERROR_IO_INCOMPLETE || error == WAIT_TIMEOUT ||
+                        error == WAIT_IO_COMPLETION)) {
             SetLastError(error);
             return result;
         }
@@ -1071,49 +1069,56 @@ namespace droute {
     }
 
     int WSAAPI Mine_WSAEventSelect(SOCKET s, WSAEVENT hEventObject, long lNetworkEvents) {
-        {
-            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-            if (hEventObject && lNetworkEvents) {
-                g_nonBlockingSockets.insert(s);
-            } else {
-                g_nonBlockingSockets.erase(s);
-            }
-        }
+        Logger::ErrorScope resultError;
         const int result = Hooks::Real_WSAEventSelect(s, hEventObject, lNetworkEvents);
+        resultError.error = GetLastError();
+        if (result == 0) {
+            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            // cancelling notifications leaves the socket nonblocking.
+            g_nonBlockingSockets.insert(s);
+        }
         LOG_DEBUG("event=socket.notification socket=%llu api=WSAEventSelect event=%p mask=0x%lX result=%d wsa_error=%d",
-            (ULONG_PTR)s, hEventObject, lNetworkEvents, result, result == SOCKET_ERROR ? WSAGetLastError() : 0);
+            (ULONG_PTR)s, hEventObject, lNetworkEvents, result,
+            result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
         return result;
     }
 
     int WSAAPI Mine_WSAAsyncSelect(SOCKET s, HWND hWnd, unsigned int wMsg, long lEvent) {
-        {
-            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-            if (lEvent) {
-                g_nonBlockingSockets.insert(s);
-            } else {
-                g_nonBlockingSockets.erase(s);
-            }
-        }
+        Logger::ErrorScope resultError;
         const int result = Hooks::Real_WSAAsyncSelect(s, hWnd, wMsg, lEvent);
+        resultError.error = GetLastError();
+        if (result == 0) {
+            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            g_nonBlockingSockets.insert(s);
+        }
         LOG_DEBUG("event=socket.notification socket=%llu api=WSAAsyncSelect window=%p message=%u mask=0x%lX result=%d wsa_error=%d",
-            (ULONG_PTR)s, hWnd, wMsg, lEvent, result, result == SOCKET_ERROR ? WSAGetLastError() : 0);
+            (ULONG_PTR)s, hWnd, wMsg, lEvent, result,
+            result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
         return result;
     }
 
     int WSAAPI Mine_ioctlsocket(SOCKET s, long cmd, u_long* argp) {
-        if (cmd == FIONBIO) {
+        if (cmd != FIONBIO)
+            return Hooks::Real_ioctlsocket(s, cmd, argp);
+
+        Logger::ErrorScope resultError;
+        const int result = Hooks::Real_ioctlsocket(s, cmd, argp);
+        resultError.error = GetLastError();
+        const char* mode = "unknown";
+        // read the argument only after winsock has accepted it.
+        if (result == 0) {
+            const bool nonblocking = *argp != 0;
+            mode = nonblocking ? "yes" : "no";
             std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-            if (*argp) {
+            if (nonblocking) {
                 g_nonBlockingSockets.insert(s);
             } else {
                 g_nonBlockingSockets.erase(s);
             }
         }
-        const int result = Hooks::Real_ioctlsocket(s, cmd, argp);
-        if (cmd == FIONBIO) {
-            LOG_DEBUG("event=socket.mode socket=%llu api=ioctlsocket requested_nonblocking=%lu result=%d wsa_error=%d",
-                (ULONG_PTR)s, *argp, result, result == SOCKET_ERROR ? WSAGetLastError() : 0);
-        }
+        LOG_DEBUG("event=socket.mode socket=%llu api=ioctlsocket requested_nonblocking=%s result=%d wsa_error=%d",
+            (ULONG_PTR)s, mode, result,
+            result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
         return result;
     }
 

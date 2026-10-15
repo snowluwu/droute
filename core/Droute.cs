@@ -76,7 +76,7 @@ namespace Droute.Core
 
         private static void ObserveInstall(Action<string, string> observe, string stage, string details)
         {
-            // Diagnostics must not change installation or cleanup behavior.
+            // observer failures must not interrupt installation or cleanup.
             try { observe?.Invoke(stage, details); }
             catch { }
         }

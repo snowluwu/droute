@@ -9,7 +9,7 @@ namespace droute {
         Status status = Status::Idle;
         SOCKET ctrlSocket = INVALID_SOCKET;
         sockaddr_in relayAddr = {};
-        // Per-process flow identity survives reassociation and distinguishes reused handles.
+        // stays the same across reassociations; distinguishes reused socket handles.
         uint64_t flowId = 0;
         uint64_t createdAt = 0, attemptStartedAt = 0, lastSummaryAt = 0;
         uint64_t attempts = 0, generation = 0;
