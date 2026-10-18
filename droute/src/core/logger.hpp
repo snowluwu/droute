@@ -17,12 +17,12 @@ namespace droute {
     namespace Logger {
 
         bool Init();
-        // request queue drain and wait up to one second; call only outside DllMain.
+        // drains the queue; call only outside dllmain
         void Shutdown();
         void SetLevel(LogLevel level);
         bool Enabled(LogLevel level);
 
-        // logging must preserve the intercepted API's last error.
+        // preserve the intercepted api error
         struct ErrorScope {
             DWORD error = GetLastError();
 
