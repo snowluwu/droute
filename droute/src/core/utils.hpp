@@ -13,7 +13,6 @@ namespace droute {
     bool WaitForWrite(SOCKET s, int timeoutMs);
     bool WaitForRead(SOCKET s, int timeoutMs);
     bool WaitForConnect(SOCKET s, int timeoutMs);
-    bool SetNonBlocking(SOCKET s, bool nonBlock);
 
     uint64_t MakeDeadline(uint32_t timeoutMs);
     int RemainingTimeout(uint64_t deadline);

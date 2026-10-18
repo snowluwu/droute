@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "src/core/utils.hpp"
+#include "src/hook/hooks.hpp"
 
 namespace droute {
 
@@ -7,8 +8,6 @@ namespace droute {
         if (addr.sin_family != AF_INET)
             return false;
         uint32_t ip = ntohl(addr.sin_addr.s_addr);
-        if (ip == 0x7F000001)
-            return true;
         if ((ip & 0xFF000000) == 0x7F000000)
             return true;
         if ((ip & 0xFF000000) == 0x0A000000)
@@ -69,7 +68,7 @@ namespace droute {
         }
 
         char byte = 0;
-        result = recv(s, &byte, 1, MSG_PEEK);
+        result = Hooks::Real_recv(s, &byte, 1, MSG_PEEK);
         if (result > 0)
             return false;
         if (result == 0) {
@@ -143,11 +142,6 @@ namespace droute {
         return result > 0 && (FD_ISSET(s, &writable) || FD_ISSET(s, &exceptional));
     }
 
-    bool SetNonBlocking(SOCKET s, bool nonBlock) {
-        u_long mode = nonBlock ? 1 : 0;
-        return ioctlsocket(s, FIONBIO, &mode) == NO_ERROR;
-    }
-
     uint64_t MakeDeadline(uint32_t timeoutMs) {
         return GetTickCount64() + timeoutMs;
     }
@@ -165,7 +159,7 @@ namespace droute {
         const char* p = static_cast<const char*>(data);
         int sent = 0;
         while (sent < len) {
-            int n = ::send(s, p + sent, len - sent, 0);
+            int n = Hooks::Real_send(s, p + sent, len - sent, 0);
             if (n > 0) {
                 sent += n;
             } else if (n == 0) {
@@ -188,7 +182,7 @@ namespace droute {
         char* p = static_cast<char*>(buf);
         int recvd = 0;
         while (recvd < len) {
-            int n = ::recv(s, p + recvd, len - recvd, 0);
+            int n = Hooks::Real_recv(s, p + recvd, len - recvd, 0);
             if (n > 0) {
                 recvd += n;
             } else if (n == 0) {

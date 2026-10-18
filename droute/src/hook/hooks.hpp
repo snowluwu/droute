@@ -40,12 +40,14 @@ namespace droute {
     struct TcpConnection {
         uint64_t id = 0;
         uint64_t startedAt = 0;
-        sockaddr_in destination = {};
     };
 
     extern std::map<SOCKET, TcpConnection> g_tcpConnections;
 
     namespace Hooks {
+
+        extern decltype(&send) Real_send;
+        extern decltype(&recv) Real_recv;
 
         extern int(WSAAPI* Real_connect)(SOCKET s, const sockaddr* name, int namelen);
         extern int(WSAAPI* Real_bind)(SOCKET s, const sockaddr* addr, int namelen);

@@ -112,6 +112,7 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
     <ClInclude Include="src\net\socks5.hpp" />
     <ClInclude Include="src\hook\hooks.hpp" />
     <ClInclude Include="src\hook\tcp.hpp" />
+    <ClInclude Include="src\hook\async.hpp" />
     <ClInclude Include="src\hook\udp.hpp" />
     <ClInclude Include="src\hook\process.hpp" />
   </ItemGroup>
@@ -127,6 +128,7 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
     <ClCompile Include="src\net\socks5.cpp" />
     <ClCompile Include="src\hook\hooks.cpp" />
     <ClCompile Include="src\hook\tcp.cpp" />
+    <ClCompile Include="src\hook\async.cpp" />
     <ClCompile Include="src\hook\udp.cpp" />
     <ClCompile Include="src\hook\process.cpp" />
   </ItemGroup>

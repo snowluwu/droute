@@ -1,11 +1,13 @@
 #include "pch.h"
 #include "src/hook/hooks.hpp"
+#include "src/hook/async.hpp"
 #include "src/core/logger.hpp"
 #include "src/hook/tcp.hpp"
 #include "src/hook/udp.hpp"
 #include "src/hook/process.hpp"
 
 namespace droute {
+
 
     std::shared_mutex g_stateMutex;
     std::condition_variable_any g_udpAssociationChanged;
@@ -15,6 +17,9 @@ namespace droute {
     std::map<SOCKET, TcpConnection> g_tcpConnections;
 
     namespace Hooks {
+
+        decltype(&send) Real_send = send;
+        decltype(&recv) Real_recv = recv;
 
         int(WSAAPI* Real_connect)(SOCKET s, const sockaddr* name, int namelen) = connect;
         int(WSAAPI* Real_bind)(SOCKET s, const sockaddr* addr, int namelen) = bind;
@@ -51,6 +56,15 @@ namespace droute {
                 LOG_ERROR("event=hooks.initialize.failed status=%d description=%s", status, MH_StatusToString(status));
                 return false;
             }
+
+            struct Installation {
+                bool committed = false;
+
+                ~Installation() {
+                    if (!committed)
+                        MH_Uninitialize();
+                }
+            } installation;
 
             auto HookOne = [&](const wchar_t* mod, const char* name, void* hook, void** orig) -> bool {
                 const MH_STATUS result = MH_CreateHookApi(mod, name, hook, orig);
@@ -103,6 +117,9 @@ namespace droute {
             if (!HookOne(L"kernel32.dll", "CreateProcessW", Mine_CreateProcessW, (void**)&Real_CreateProcessW))
                 return false;
 
+            if (!InstallAsyncHooks())
+                return false;
+
             status = MH_EnableHook(MH_ALL_HOOKS);
             if (status != MH_OK) {
                 LOG_ERROR("event=hooks.enable.failed status=%d description=%s", status, MH_StatusToString(status));
@@ -110,6 +127,7 @@ namespace droute {
             }
 
             LOG_INFO("hooks installed");
+            installation.committed = true;
             return true;
         }
 

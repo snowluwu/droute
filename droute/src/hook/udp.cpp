@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "src/hook/async.hpp"
 #include "src/dllmain.hpp"
 #include "src/hook/udp.hpp"
 #include "src/hook/hooks.hpp"
@@ -1058,6 +1059,7 @@ namespace droute {
     }
 
     int WSAAPI Mine_closesocket(SOCKET s) {
+        ForgetAsyncSocket(s);
         uint64_t flow = 0;
         uint64_t createdAt = 0;
         TcpConnection tcp;
@@ -1101,7 +1103,7 @@ namespace droute {
         resultError.error = GetLastError();
         if (result == 0) {
             std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-            // cancelling notifications leaves the socket nonblocking.
+            // cancelling notifications leaves the socket nonblocking
             g_nonBlockingSockets.insert(s);
         }
         LOG_DEBUG("event=socket.notification socket=%llu api=WSAEventSelect event=%p mask=0x%lX result=%d wsa_error=%d",
@@ -1130,10 +1132,12 @@ namespace droute {
             return Hooks::Real_ioctlsocket(s, cmd, argp);
 
         Logger::ErrorScope resultError;
-        const int result = Hooks::Real_ioctlsocket(s, cmd, argp);
+        int result;
+        if (!argp || !SetConnectingSocketMode(s, *argp != 0, result))
+            result = Hooks::Real_ioctlsocket(s, cmd, argp);
         resultError.error = GetLastError();
         const char* mode = "unknown";
-        // read the argument only after winsock has accepted it.
+        // read the argument after winsock accepts it
         if (result == 0) {
             const bool nonblocking = *argp != 0;
             mode = nonblocking ? "yes" : "no";

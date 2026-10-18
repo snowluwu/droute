@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "src/dllmain.hpp"
 #include "src/hook/tcp.hpp"
+#include "src/hook/async.hpp"
+#include "src/hook/udp.hpp"
 #include "src/hook/hooks.hpp"
 #include "src/core/config.hpp"
 #include "src/core/logger.hpp"
@@ -76,7 +78,7 @@ namespace droute {
             WSASetLastError(WSAENETDOWN);
             return SOCKET_ERROR;
         }
-        if (namelen < static_cast<int>(sizeof(sockaddr_in))) {
+        if (!name || namelen < static_cast<int>(sizeof(sockaddr_in))) {
             return Hooks::Real_connect(s, name, namelen);
         }
 
@@ -96,11 +98,9 @@ namespace droute {
                       FormatAddress(*addr).c_str());
             return Hooks::Real_connect(s, name, namelen);
         }
-        if (IsUdpSocket(s)) {
-            LOG_DEBUG("event=udp.connect socket=%llu route=direct destination=%s", (ULONG_PTR)s,
-                      FormatAddress(*addr).c_str());
+
+        if (IsUdpSocket(s))
             return Hooks::Real_connect(s, name, namelen);
-        }
 
         bool wasNonBlocking = false;
         {
@@ -114,7 +114,7 @@ namespace droute {
         const uint64_t connection = g_nextTcpConnection.fetch_add(1, std::memory_order_relaxed);
         {
             std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-            g_tcpConnections[s] = {connection, startedAt, *addr};
+            g_tcpConnections[s] = {connection, startedAt};
         }
         LOG_INFO("event=tcp.connect.start connection=%llu socket=%llu destination=%s proxy=%s mode=%s timeout_ms=%u",
                  connection, (ULONG_PTR)s, target.c_str(), FormatAddress(g_proxyAddr).c_str(),
@@ -130,6 +130,9 @@ namespace droute {
             }
             changedToNonBlocking = true;
         }
+
+        if (wasNonBlocking)
+            return BeginTcpConnect(s, *addr);
 
         int result = ConnectViaProxy(s, addr, deadline);
         int resultError = result == 0 ? 0 : WSAGetLastError();

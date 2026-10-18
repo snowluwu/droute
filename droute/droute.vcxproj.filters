@@ -37,6 +37,9 @@
     <ClInclude Include="src\hook\tcp.hpp">
       <Filter>src\hook</Filter>
     </ClInclude>
+    <ClInclude Include="src\hook\async.hpp">
+      <Filter>src\hook</Filter>
+    </ClInclude>
     <ClInclude Include="src\hook\udp.hpp">
       <Filter>src\hook</Filter>
     </ClInclude>
@@ -62,6 +65,9 @@
       <Filter>src\hook</Filter>
     </ClCompile>
     <ClCompile Include="src\hook\tcp.cpp">
+      <Filter>src\hook</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hook\async.cpp">
       <Filter>src\hook</Filter>
     </ClCompile>
     <ClCompile Include="src\hook\udp.cpp">
