@@ -15,7 +15,7 @@ namespace Droute.Installer
     internal static class Program
     {
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool AttachConsole(int dwProcessId);
+        private static extern bool FreeConsole();
 
         private static bool createdNew;
         private static Mutex mtx;
@@ -30,11 +30,6 @@ namespace Droute.Installer
 
             if (args.Length > 0)
             {
-                if (AttachConsole(-1))
-                {
-                    Console.Out.Flush();
-                }
-
                 #region [ banner ]
 
                 Console.ForegroundColor = ConsoleColor.Blue;
@@ -72,6 +67,7 @@ namespace Droute.Installer
                 return;
             }
 
+            FreeConsole();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm());
