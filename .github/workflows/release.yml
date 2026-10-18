@@ -1,0 +1,74 @@
+name: Build and Release
+run-name: Build ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+
+      - name: Build solution
+        run: msbuild droute.sln /restore /p:Configuration=Release /p:Platform=x64 /verbosity:minimal
+
+      - name: Prepare release archive
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP "droute-release"
+          New-Item -ItemType Directory -Path "$package/ru-RU" -Force | Out-Null
+          Copy-Item "installer/bin/Release/droute.exe", "installer/bin/Release/droute.exe.config", "README.md", "LICENSE.txt" -Destination $package
+          Copy-Item "installer/bin/Release/ru-RU/droute.resources.dll" -Destination "$package/ru-RU"
+
+          $help = & "$package/droute.exe" --help 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or $help -notmatch '--install') {
+            throw "Packaged installer failed its CLI check: $help"
+          }
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          Compress-Archive -Path "$package/*" -DestinationPath release/droute.zip -Force
+
+      - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: orhun/git-cliff-action@v4
+        with:
+          version: v2.14.2
+          config: .github/cliff.toml
+          args: --current
+        env:
+          OUTPUT: release/release-notes.md
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: droute-build
+          path: release/droute.zip
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/droute.zip
+          fail_on_unmatched_files: true
+          name: Release ${{ github.ref_name }}
+          body_path: release/release-notes.md
