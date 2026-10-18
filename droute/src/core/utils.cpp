@@ -207,7 +207,7 @@ namespace droute {
         return true;
     }
 
-    std::string AddrToString(const sockaddr_in& addr) {
+    std::string FormatAddress(const sockaddr_in& addr) {
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
         char buf[64];

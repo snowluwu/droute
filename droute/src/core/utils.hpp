@@ -21,6 +21,6 @@ namespace droute {
     bool SendAll(SOCKET s, const void* data, int len, uint64_t deadline);
     bool RecvAll(SOCKET s, void* buf, int len, uint64_t deadline);
 
-    std::string AddrToString(const sockaddr_in& addr);
+    std::string FormatAddress(const sockaddr_in& addr);
 
 }

@@ -29,7 +29,7 @@ namespace droute {
                     LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu trigger=worker "
                              "reason=%s wsa_error=%d control=%llu relay=%s",
                              association.flowId, (ULONG_PTR)entry.first, association.generation, reason, error,
-                             (ULONG_PTR)association.ctrlSocket, AddrToString(association.relayAddr).c_str());
+                             (ULONG_PTR)association.ctrlSocket, FormatAddress(association.relayAddr).c_str());
                     if (association.ctrlSocket != INVALID_SOCKET)
                         Hooks::Real_closesocket(association.ctrlSocket);
                     association.ctrlSocket = INVALID_SOCKET;

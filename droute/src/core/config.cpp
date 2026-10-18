@@ -111,7 +111,7 @@ namespace droute {
             LOG_WARN("proxy credentials are incomplete; authentication is disabled");
 
         LOG_INFO("config source=%s proxy=%s auth=%s connect_timeout_ms=%u reconnect_interval_ms=%u log_level=%s",
-                 hasRegistryConfig ? "registry" : "defaults", AddrToString(g_proxyAddr).c_str(), authState,
+                 hasRegistryConfig ? "registry" : "defaults", FormatAddress(g_proxyAddr).c_str(), authState,
                  connectTimeout, reconnectInterval, LevelToString(logLevel));
         return hasRegistryConfig;
     }

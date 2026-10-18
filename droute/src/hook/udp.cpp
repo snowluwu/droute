@@ -36,7 +36,7 @@ namespace droute {
         a.attemptStartedAt = GetTickCount64();
         const LogLevel level = a.attempts == 1 || a.lastAssociationError == 0 ? LogLevel::Info : LogLevel::Debug;
         DROUTE_LOG(level, "event=udp.associate.start flow=%llu socket=%llu attempt=%llu trigger=%s proxy=%s", a.flowId,
-                   (ULONG_PTR)s, a.attempts, trigger, AddrToString(g_proxyAddr).c_str());
+                   (ULONG_PTR)s, a.attempts, trigger, FormatAddress(g_proxyAddr).c_str());
     }
 
     void LogUdpAssociationResult(SOCKET s, UdpAssociation& a, bool ok, int error, const char* stage) {
@@ -47,7 +47,7 @@ namespace droute {
             LOG_INFO("event=udp.associate.ready flow=%llu socket=%llu attempt=%llu generation=%llu control=%llu "
                      "relay=%s elapsed_ms=%llu",
                      a.flowId, (ULONG_PTR)s, a.attempts, a.generation, (ULONG_PTR)a.ctrlSocket,
-                     AddrToString(a.relayAddr).c_str(), elapsed);
+                     FormatAddress(a.relayAddr).c_str(), elapsed);
         } else {
             const LogLevel level =
                 a.attempts == 1 || error != a.lastAssociationError || strcmp(stage, a.associationStage) != 0
@@ -71,7 +71,7 @@ namespace droute {
                  "io_errors=%llu would_block=%llu blocked_sends=%llu last_io_error=%d last_associate_error=%d "
                  "associate_stage=%s",
                  event, a.flowId, (ULONG_PTR)s, UdpStatusName(a.status), a.generation, a.attempts,
-                 (ULONG_PTR)a.ctrlSocket, AddrToString(a.relayAddr).c_str(), AddrToString(a.destination).c_str(),
+                 (ULONG_PTR)a.ctrlSocket, FormatAddress(a.relayAddr).c_str(), FormatAddress(a.destination).c_str(),
                  now - a.createdAt, now - a.lastSummaryAt, a.txPackets, a.rxPackets, a.txBytes, a.rxBytes,
                  a.txPackets - a.reportedTx, a.rxPackets - a.reportedRx,
                  a.lastTxAt ? static_cast<int64_t>(now - a.lastTxAt) : -1LL,
@@ -106,7 +106,7 @@ namespace droute {
         if (destination && !IsSameAddr(*destination, a.destination)) {
             a.destination = *destination;
             LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", a.flowId, (ULONG_PTR)s,
-                     AddrToString(*destination).c_str(), api);
+                     FormatAddress(*destination).c_str(), api);
         }
     }
 
@@ -152,7 +152,7 @@ namespace droute {
                 LOG_INFO(
                     "event=udp.io.first flow=%llu socket=%llu generation=%llu direction=%s api=%s bytes=%lu source=%s",
                     a.flowId, (ULONG_PTR)s, a.generation, direction, observation.api, bytes,
-                    source ? AddrToString(*source).c_str() : "none");
+                    source ? FormatAddress(*source).c_str() : "none");
             }
         }
         LOG_TRACE("event=udp.io.complete flow=%llu socket=%llu generation=%llu direction=%s api=%s completion_api=%s "
@@ -324,11 +324,11 @@ namespace droute {
             source = *reinterpret_cast<const sockaddr_in*>(&operation->receivedFrom);
             if (IsUdpRelaySource(*operation, source)) {
                 operation->observation.proxied = true;
-                if (!Socks5UnwrapUdp(operation->buffer.data(), static_cast<int>(transferred), source, payload,
+                if (!Socks5::DecodeUdpPacket(operation->buffer.data(), static_cast<int>(transferred), source, payload,
                                      payloadLength)) {
                     LOG_DEBUG("event=udp.unwrap.failed flow=%llu socket=%llu generation=%llu relay=%s wire_bytes=%lu",
                               operation->observation.flowId, (ULONG_PTR)operation->socket,
-                              operation->observation.generation, AddrToString(source).c_str(), transferred);
+                              operation->observation.generation, FormatAddress(source).c_str(), transferred);
                     LOG_DEBUG("event=udp.unwrap.header flow=%llu reserved_hi=%u reserved_lo=%u fragment=%u atyp=%u "
                               "header_present=%s",
                               operation->observation.flowId, transferred > 0 ? operation->buffer[0] : 0,
@@ -437,7 +437,7 @@ namespace droute {
         int size = sizeof(local);
         const bool hasLocal = getsockname(s, reinterpret_cast<sockaddr*>(&local), &size) == 0;
         LOG_INFO("event=udp.track flow=%llu socket=%llu local=%s mode=%s", association.flowId, (ULONG_PTR)s,
-                 hasLocal ? AddrToString(local).c_str() : "unknown",
+                 hasLocal ? FormatAddress(local).c_str() : "unknown",
                  g_nonBlockingSockets.count(s) ? "nonblocking" : "blocking");
     }
 
@@ -453,7 +453,7 @@ namespace droute {
         LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu from=%s reason=%s error=%d "
                  "control=%llu relay=%s",
                  it->second.flowId, (ULONG_PTR)s, it->second.generation, UdpStatusName(it->second.status), reason,
-                 error, (ULONG_PTR)it->second.ctrlSocket, AddrToString(it->second.relayAddr).c_str());
+                 error, (ULONG_PTR)it->second.ctrlSocket, FormatAddress(it->second.relayAddr).c_str());
         if (it->second.ctrlSocket != INVALID_SOCKET) {
             Hooks::Real_closesocket(it->second.ctrlSocket);
             it->second.ctrlSocket = INVALID_SOCKET;
@@ -519,9 +519,9 @@ namespace droute {
         }
 
         LOG_DEBUG("event=udp.control.connected control=%llu proxy=%s", (ULONG_PTR)ctrl,
-                  AddrToString(g_proxyAddr).c_str());
+                  FormatAddress(g_proxyAddr).c_str());
         out.associationStage = "socks_greeting_auth";
-        if (!Socks5Handshake(ctrl, g_cfg.user.c_str(), g_cfg.password.c_str(), deadline)) {
+        if (!Socks5::Handshake(ctrl, g_cfg.user.c_str(), g_cfg.password.c_str(), deadline)) {
             int error = WSAGetLastError();
             Hooks::Real_closesocket(ctrl);
             WSASetLastError(error);
@@ -530,7 +530,7 @@ namespace droute {
 
         sockaddr_in relay;
         out.associationStage = "socks_udp_associate";
-        if (!Socks5RequestUdpAssociate(ctrl, relay, deadline)) {
+        if (!Socks5::RequestUdpAssociate(ctrl, relay, deadline)) {
             int error = WSAGetLastError();
             Hooks::Real_closesocket(ctrl);
             WSASetLastError(error);
@@ -612,7 +612,7 @@ namespace droute {
         if (!IsSameAddr(destination, it->second.destination)) {
             it->second.destination = destination;
             LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", it->second.flowId,
-                     (ULONG_PTR)s, AddrToString(destination).c_str(), api);
+                     (ULONG_PTR)s, FormatAddress(destination).c_str(), api);
         }
 
         const uint64_t instanceId = it->second.instanceId;
@@ -684,7 +684,7 @@ namespace droute {
             LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu trigger=send reason=%s "
                      "wsa_error=%d control=%llu relay=%s",
                      it->second.flowId, (ULONG_PTR)s, it->second.generation, reason, error, (ULONG_PTR)controlSocket,
-                     AddrToString(relayAddr).c_str());
+                     FormatAddress(relayAddr).c_str());
             Hooks::Real_closesocket(controlSocket);
             it->second.ctrlSocket = INVALID_SOCKET;
             it->second.relayAddr = {};
@@ -719,7 +719,7 @@ namespace droute {
         CaptureUdpObservation(s, observation, "sendto");
         observation.proxied = true;
 
-        auto packet = Socks5WrapUdp(*dst, buf, len);
+        auto packet = Socks5::EncodeUdpPacket(*dst, buf, len);
         int result =
             Hooks::Real_sendto(s, reinterpret_cast<const char*>(packet.data()), static_cast<int>(packet.size()), flags,
                                reinterpret_cast<const sockaddr*>(&relayAddr), sizeof(relayAddr));
@@ -775,7 +775,7 @@ namespace droute {
         operation->overlapped = lpOverlapped;
         operation->completionRoutine = lpCompletionRoutine;
         operation->applicationBufferSize = payloadSize;
-        operation->buffer = Socks5WrapUdp(*dst, payload.data(), static_cast<int>(payloadSize));
+        operation->buffer = Socks5::EncodeUdpPacket(*dst, payload.data(), static_cast<int>(payloadSize));
         operation->proxyHeaderSize = static_cast<DWORD>(operation->buffer.size()) - payloadSize;
         operation->relayAtStart = relayAddr;
         operation->hasRelayAtStart = true;
@@ -827,7 +827,7 @@ namespace droute {
         operation->applicationFrom = from;
         operation->applicationFromLength = fromlen;
         operation->applicationFromCapacity = from && fromlen ? *fromlen : 0;
-        operation->buffer.resize(static_cast<size_t>(len) + SOCKS5_UDP_MAX_HEADER_SIZE);
+        operation->buffer.resize(static_cast<size_t>(len) + Socks5::UdpMaxHeaderSize);
         operation->hasRelayAtStart = TryGetUdpRelay(s, operation->relayAtStart);
         CaptureUdpObservation(s, operation->observation, "recvfrom");
 
@@ -858,7 +858,7 @@ namespace droute {
         DWORD applicationBufferSize = 0;
         if (!GetApplicationBufferSize(lpBuffers, dwBufferCount, applicationBufferSize))
             return SOCKET_ERROR;
-        if (applicationBufferSize > INT_MAX - SOCKS5_UDP_MAX_HEADER_SIZE) {
+        if (applicationBufferSize > INT_MAX - Socks5::UdpMaxHeaderSize) {
             WSASetLastError(WSAEMSGSIZE);
             return SOCKET_ERROR;
         }
@@ -875,7 +875,7 @@ namespace droute {
         operation->applicationFromCapacity = lpFrom && lpFromlen ? *lpFromlen : 0;
         operation->applicationFlags = lpFlags;
         operation->receiveFlags = lpFlags ? *lpFlags : 0;
-        operation->buffer.resize(static_cast<size_t>(applicationBufferSize) + SOCKS5_UDP_MAX_HEADER_SIZE);
+        operation->buffer.resize(static_cast<size_t>(applicationBufferSize) + Socks5::UdpMaxHeaderSize);
         operation->hasRelayAtStart = TryGetUdpRelay(s, operation->relayAtStart);
         CaptureUdpObservation(s, operation->observation, "WSARecvFrom");
 

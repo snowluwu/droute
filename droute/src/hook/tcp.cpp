@@ -36,12 +36,12 @@ namespace droute {
     }
 
     int Socks5ProxyConnect(SOCKET s, const sockaddr_in& target, uint64_t deadline) {
-        if (!Socks5Handshake(s, g_cfg.user.c_str(), g_cfg.password.c_str(), deadline)) {
+        if (!Socks5::Handshake(s, g_cfg.user.c_str(), g_cfg.password.c_str(), deadline)) {
             LOG_WARN("event=tcp.connect.stage_failed socket=%llu stage=socks_greeting_auth wsa_error=%d", (ULONG_PTR)s,
                      WSAGetLastError());
             return SOCKET_ERROR;
         }
-        if (!Socks5RequestConnect(s, target, deadline)) {
+        if (!Socks5::RequestConnect(s, target, deadline)) {
             LOG_WARN("event=tcp.connect.stage_failed socket=%llu stage=socks_connect wsa_error=%d", (ULONG_PTR)s,
                      WSAGetLastError());
             return SOCKET_ERROR;
@@ -52,7 +52,7 @@ namespace droute {
     int ConnectViaProxy(SOCKET s, const sockaddr_in* target, uint64_t deadline) {
         if (ConnectToProxy(s, deadline) != 0) {
             LOG_WARN("event=tcp.connect.stage_failed socket=%llu stage=proxy_connect proxy=%s wsa_error=%d",
-                     (ULONG_PTR)s, AddrToString(g_proxyAddr).c_str(), WSAGetLastError());
+                     (ULONG_PTR)s, FormatAddress(g_proxyAddr).c_str(), WSAGetLastError());
             return SOCKET_ERROR;
         }
         if (Socks5ProxyConnect(s, *target, deadline) != 0) {
@@ -79,12 +79,12 @@ namespace droute {
 
         if (IsLocalAddr(*addr) || IsSameAddr(*addr, g_proxyAddr)) {
             LOG_DEBUG("event=tcp.route socket=%llu route=direct reason=local_or_proxy destination=%s", (ULONG_PTR)s,
-                      AddrToString(*addr).c_str());
+                      FormatAddress(*addr).c_str());
             return Hooks::Real_connect(s, name, namelen);
         }
         if (IsUdpSocket(s)) {
             LOG_DEBUG("event=udp.connect socket=%llu route=direct destination=%s", (ULONG_PTR)s,
-                      AddrToString(*addr).c_str());
+                      FormatAddress(*addr).c_str());
             return Hooks::Real_connect(s, name, namelen);
         }
 
@@ -94,7 +94,7 @@ namespace droute {
             wasNonBlocking = g_nonBlockingSockets.count(s) != 0;
         }
 
-        const std::string target = AddrToString(*addr);
+        const std::string target = FormatAddress(*addr);
         const uint64_t startedAt = GetTickCount64();
         const uint64_t deadline = MakeDeadline(g_cfg.connectTimeout);
         const uint64_t connection = g_nextTcpConnection.fetch_add(1, std::memory_order_relaxed);
@@ -103,7 +103,7 @@ namespace droute {
             g_tcpConnections[s] = {connection, startedAt, *addr};
         }
         LOG_INFO("event=tcp.connect.start connection=%llu socket=%llu destination=%s proxy=%s mode=%s timeout_ms=%u",
-                 connection, (ULONG_PTR)s, target.c_str(), AddrToString(g_proxyAddr).c_str(),
+                 connection, (ULONG_PTR)s, target.c_str(), FormatAddress(g_proxyAddr).c_str(),
                  wasNonBlocking ? "nonblocking" : "blocking", g_cfg.connectTimeout);
 
         bool changedToNonBlocking = false;
