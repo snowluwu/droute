@@ -325,49 +325,54 @@ namespace droute {
     static int WSAAPI Async_eventSelect(SOCKET s, WSAEVENT event, long events) {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
 
+        auto it = g_connections.find(s);
+        const bool pending =
+            it != g_connections.end() && it->second->transport != INVALID_SOCKET && it->second->pending;
+        int result = Real_eventSelect(s, pending ? nullptr : event, pending ? 0 : events);
+        if (result != 0)
+            return result;
+
         auto& connection = g_connections[s];
         if (!connection) {
             connection = std::make_shared<AsyncConnection>();
             connection->socket = s;
         }
 
-        const bool pending = connection->transport != INVALID_SOCKET && connection->pending;
+        connection->event = event;
+        connection->window = nullptr;
+        connection->events = events;
+        connection->restoreBlocking = false;
+        if (connection->transport != INVALID_SOCKET && !connection->pending)
+            NotifyConnection(*connection);
 
-        int result = Real_eventSelect(s, pending ? nullptr : event, pending ? 0 : events);
-        if (!result) {
-            connection->event = event;
-            connection->window = nullptr;
-            connection->events = events;
-            connection->restoreBlocking = false;
-            if (connection->transport != INVALID_SOCKET && !connection->pending)
-                NotifyConnection(*connection);
-        }
-
-        return result;
+        return 0;
     }
 
     static int WSAAPI Async_asyncSelect(SOCKET s, HWND window, UINT message, long events) {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
 
+        auto it = g_connections.find(s);
+        const bool pending =
+            it != g_connections.end() && it->second->transport != INVALID_SOCKET && it->second->pending;
+        int result = Real_asyncSelect(s, window, message, pending ? 0 : events);
+        if (result != 0)
+            return result;
+
         auto& connection = g_connections[s];
         if (!connection) {
             connection = std::make_shared<AsyncConnection>();
             connection->socket = s;
         }
 
-        const bool pending = connection->transport != INVALID_SOCKET && connection->pending;
-        int result = Real_asyncSelect(s, window, message, pending ? 0 : events);
-        if (!result) {
-            connection->window = window;
-            connection->message = message;
-            connection->event = nullptr;
-            connection->events = events;
-            connection->restoreBlocking = false;
-            if (connection->transport != INVALID_SOCKET && !connection->pending)
-                NotifyConnection(*connection);
-        }
+        connection->window = window;
+        connection->message = message;
+        connection->event = nullptr;
+        connection->events = events;
+        connection->restoreBlocking = false;
+        if (connection->transport != INVALID_SOCKET && !connection->pending)
+            NotifyConnection(*connection);
 
-        return result;
+        return 0;
     }
 
     static int WSAAPI Async_enumEvents(SOCKET s, WSAEVENT event, LPWSANETWORKEVENTS events) {
@@ -391,9 +396,18 @@ namespace droute {
     }
 
     static int WSAAPI Async_select(int ignored, fd_set* read, fd_set* write, fd_set* except, const timeval* timeout) {
+        // let Winsock handle invalid timeouts before converting them to unsigned milliseconds
+        if (timeout && (timeout->tv_sec < 0 || timeout->tv_usec < 0))
+            return Real_select(ignored, read, write, except, timeout);
+
         const fd_set inputs[] = {read ? *read : fd_set{}, write ? *write : fd_set{}, except ? *except : fd_set{}};
-        const uint64_t deadline =
-            timeout ? GetTickCount64() + timeout->tv_sec * 1000ULL + (timeout->tv_usec + 999) / 1000 : UINT64_MAX;
+        uint64_t deadline = UINT64_MAX;
+        if (timeout) {
+            const uint64_t milliseconds =
+                timeout->tv_sec * 1000ULL + (static_cast<uint64_t>(timeout->tv_usec) + 999) / 1000;
+            deadline = GetTickCount64() + milliseconds;
+        }
+        bool waitedForConnection = false;
         for (;;) {
             fd_set sets[] = {inputs[0], inputs[1], inputs[2]};
             bool tracked = false;
@@ -412,8 +426,17 @@ namespace droute {
             }
 
             if (!tracked) {
-                const uint64_t remaining = deadline > GetTickCount64() ? deadline - GetTickCount64() : 0;
-                timeval rest{static_cast<long>(remaining / 1000), static_cast<long>((remaining % 1000) * 1000)};
+                // preserve the original microsecond timeout when no proxy connection is pending
+                if (!waitedForConnection)
+                    return Real_select(ignored, read, write, except, timeout);
+
+                const uint64_t now = GetTickCount64();
+                const uint64_t remaining = now < deadline ? deadline - now : 0;
+                timeval rest = {};
+                if (timeout) {
+                    rest.tv_sec = static_cast<long>(remaining / 1000);
+                    rest.tv_usec = static_cast<long>((remaining % 1000) * 1000);
+                }
                 if (read)
                     *read = inputs[0];
                 if (write)
@@ -423,6 +446,7 @@ namespace droute {
                 return Real_select(ignored, read, write, except, timeout ? &rest : nullptr);
             }
 
+            waitedForConnection = true;
             timeval slice = {};
             int result = 0;
 
@@ -469,9 +493,7 @@ namespace droute {
                     ++valid;
             }
             if (!tracked)
-                return Real_WSAPoll(
-                    descriptors, count,
-                    timeout < 0 ? -1 : static_cast<int>(deadline > GetTickCount64() ? deadline - GetTickCount64() : 0));
+                return Real_WSAPoll(descriptors, count, timeout < 0 ? -1 : RemainingTimeout(deadline));
 
             int result = valid ? Real_WSAPoll(ready.data(), count, 0) : 0;
             if (result == SOCKET_ERROR)
