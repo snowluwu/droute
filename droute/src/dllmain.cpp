@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "src/exports.hpp"
+#include "src/dllmain.hpp"
 #include "src/core/config.hpp"
 #include "src/core/logger.hpp"
 #include "src/core/utils.hpp"
@@ -9,11 +9,17 @@
 
 namespace droute {
 
-    static std::atomic<bool> g_running{false};
+    static HANDLE g_stopEvent = nullptr;
+    static HANDLE g_worker = nullptr;
+    static INIT_ONCE g_runtimeOnce = INIT_ONCE_STATIC_INIT;
+    static thread_local bool g_initializing = false;
+
+    bool IsInitializingRuntime() {
+        return g_initializing;
+    }
 
     void ReconnectWorker() {
-        while (g_running.load(std::memory_order_relaxed)) {
-            Sleep(g_cfg.reconnectInterval);
+        while (WaitForSingleObject(g_stopEvent, g_cfg.reconnectInterval) == WAIT_TIMEOUT) {
 
             std::vector<SOCKET> pending;
             {
@@ -88,20 +94,25 @@ namespace droute {
         LOG_TRACE("reconnect worker exiting");
     }
 
-    static LONG g_initDone = 0;
-
-    void DoInit() {
-        if (InterlockedCompareExchange(&g_initDone, 1, 0) != 0) {
-            return;
+    static DWORD WINAPI WorkerMain(void*) {
+        try {
+            ReconnectWorker();
+        } catch (...) {
+            LOG_ERROR("UDP reconnect worker stopped unexpectedly");
         }
+        return 0;
+    }
+
+    static BOOL CALLBACK InitializeRuntime(PINIT_ONCE, void*, void**) {
+        g_initializing = true;
+
+        struct InitializingScope {
+            ~InitializingScope() {
+                g_initializing = false;
+            }
+        } scope;
 
         const uint64_t startedAt = GetTickCount64();
-
-        WSADATA wsa;
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-            OutputDebugStringA("droute: WSAStartup failed\n");
-            return;
-        }
 
         Logger::Init();
         g_cfg.Load();
@@ -118,29 +129,55 @@ namespace droute {
         if (pos != std::wstring::npos)
             g_ourDir = g_ourDir.substr(0, pos);
 
-        if (!Hooks::Install()) {
-            LOG_ERROR("hook installation failed");
-            return;
-        }
-
-        g_running = true;
-        try {
-            std::thread(ReconnectWorker).detach();
-        } catch (...) {
-            g_running = false;
-            LOG_ERROR("failed to start UDP reconnect worker");
-        }
+        g_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (g_stopEvent)
+            g_worker = CreateThread(nullptr, 0, WorkerMain, nullptr, 0, nullptr);
+        if (!g_worker)
+            LOG_ERROR("failed to start UDP reconnect worker: %lu", GetLastError());
         LOG_INFO("initialized elapsed_ms=%llu", GetTickCount64() - startedAt);
+        return TRUE;
+    }
+
+    bool EnsureRuntime() {
+        try {
+            return InitOnceExecuteOnce(&g_runtimeOnce, InitializeRuntime, nullptr, nullptr) != FALSE;
+        } catch (...) {
+            OutputDebugStringA("droute: runtime initialization failed\n");
+            return false;
+        }
+    }
+
+    void StopRuntime() {
+        if (g_stopEvent)
+            SetEvent(g_stopEvent);
+        if (g_worker && WaitForSingleObject(g_worker, 1000) == WAIT_OBJECT_0) {
+            CloseHandle(g_worker);
+            g_worker = nullptr;
+            CloseHandle(g_stopEvent);
+            g_stopEvent = nullptr;
+        }
+        Logger::Shutdown();
     }
 
 }
 
 extern "C" __declspec(dllexport) BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     switch (reason) {
-    case DLL_PROCESS_ATTACH:
-        DisableThreadLibraryCalls(hModule);
-        droute::DoInit();
+    case DLL_PROCESS_ATTACH: {
+        // install interception before the application can start networking
+        if (!droute::Hooks::Install()) {
+            OutputDebugStringA("droute: failed to install hooks\n");
+            return FALSE;
+        }
+        // installed hooks remain valid until the process exits
+        HMODULE pinned;
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                                reinterpret_cast<LPCWSTR>(hModule), &pinned)) {
+            droute::Hooks::Remove();
+            return FALSE;
+        }
         break;
+    }
 
     case DLL_PROCESS_DETACH:
         break;

@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "src/dllmain.hpp"
 #include "src/hook/tcp.hpp"
 #include "src/hook/hooks.hpp"
 #include "src/core/config.hpp"
@@ -11,7 +12,14 @@ namespace droute {
     static std::atomic<uint64_t> g_nextTcpConnection{1};
 
     int ConnectToProxy(SOCKET s, uint64_t deadline) {
-        int rc = Hooks::Real_connect(s, reinterpret_cast<const sockaddr*>(&g_proxyAddr), sizeof(g_proxyAddr));
+        sockaddr_in proxy;
+        if (!GetProxyAddress(proxy))
+            return SOCKET_ERROR;
+        if (RemainingTimeout(deadline) == 0) {
+            WSASetLastError(WSAETIMEDOUT);
+            return SOCKET_ERROR;
+        }
+        int rc = Hooks::Real_connect(s, reinterpret_cast<const sockaddr*>(&proxy), sizeof(proxy));
         if (rc == 0)
             return 0;
 
@@ -62,6 +70,12 @@ namespace droute {
     }
 
     int WSAAPI Mine_connect(SOCKET s, const sockaddr* name, int namelen) {
+        if (IsInitializingRuntime() || IsResolvingProxy())
+            return Hooks::Real_connect(s, name, namelen);
+        if (!EnsureRuntime()) {
+            WSASetLastError(WSAENETDOWN);
+            return SOCKET_ERROR;
+        }
         if (namelen < static_cast<int>(sizeof(sockaddr_in))) {
             return Hooks::Real_connect(s, name, namelen);
         }

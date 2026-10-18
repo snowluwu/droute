@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "src/dllmain.hpp"
 #include "src/hook/udp.hpp"
 #include "src/hook/hooks.hpp"
 #include "src/core/config.hpp"
@@ -584,6 +585,10 @@ namespace droute {
     }
 
     int WSAAPI Mine_bind(SOCKET s, const sockaddr* addr, int namelen) {
+        if (!EnsureRuntime()) {
+            WSASetLastError(WSAENETDOWN);
+            return SOCKET_ERROR;
+        }
         bool isUdp = IsUdpSocket(s);
 
         int rc = Hooks::Real_bind(s, addr, namelen);
@@ -697,6 +702,10 @@ namespace droute {
     }
 
     int WSAAPI Mine_sendto(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen) {
+        if (!EnsureRuntime()) {
+            WSASetLastError(WSAENETDOWN);
+            return SOCKET_ERROR;
+        }
         if (!to || tolen < static_cast<int>(sizeof(sockaddr_in)) || len < 0 || (len > 0 && !buf)) {
             return Hooks::Real_sendto(s, buf, len, flags, to, tolen);
         }
@@ -738,6 +747,10 @@ namespace droute {
     int WSAAPI Mine_WSASendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent,
                               DWORD dwFlags, const sockaddr* lpTo, int iTolen, LPWSAOVERLAPPED lpOverlapped,
                               LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) {
+        if (!EnsureRuntime()) {
+            WSASetLastError(WSAENETDOWN);
+            return SOCKET_ERROR;
+        }
         if (!lpTo || iTolen < static_cast<int>(sizeof(sockaddr_in)) || dwBufferCount == 0 || !lpBuffers) {
             return Hooks::Real_WSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpTo, iTolen,
                                          lpOverlapped, lpCompletionRoutine);
@@ -816,6 +829,10 @@ namespace droute {
     }
 
     int WSAAPI Mine_recvfrom(SOCKET s, char* buf, int len, int flags, sockaddr* from, int* fromlen) {
+        if (!EnsureRuntime()) {
+            WSASetLastError(WSAENETDOWN);
+            return SOCKET_ERROR;
+        }
         if (!buf || len < 0 || !IsTrackedUdpSocket(s))
             return Hooks::Real_recvfrom(s, buf, len, flags, from, fromlen);
 
@@ -850,6 +867,10 @@ namespace droute {
     int WSAAPI Mine_WSARecvFrom(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd,
                                 LPDWORD lpFlags, sockaddr* lpFrom, LPINT lpFromlen, LPWSAOVERLAPPED lpOverlapped,
                                 LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) {
+        if (!EnsureRuntime()) {
+            WSASetLastError(WSAENETDOWN);
+            return SOCKET_ERROR;
+        }
         if (!IsTrackedUdpSocket(s)) {
             return Hooks::Real_WSARecvFrom(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpFlags, lpFrom,
                                            lpFromlen, lpOverlapped, lpCompletionRoutine);

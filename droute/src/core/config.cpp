@@ -63,16 +63,16 @@ namespace droute {
 
         uint32_t tmp;
         if (ReadDword("ConnectTimeout", tmp)) {
-            if (tmp > 0 && tmp <= INT_MAX)
+            if (tmp >= 100 && tmp <= INT_MAX)
                 connectTimeout = tmp;
             else
                 LOG_WARN("invalid ConnectTimeout=%u, using default %u", tmp, connectTimeout);
         }
         if (ReadDword("ReconnectInterval", tmp)) {
-            if (tmp > 0)
+            if (tmp >= 100 && tmp <= INT_MAX)
                 reconnectInterval = tmp;
             else
-                LOG_WARN("invalid ReconnectInterval=0, using default %u", reconnectInterval);
+                LOG_WARN("invalid ReconnectInterval=%u, using default %u", tmp, reconnectInterval);
         }
         if (ReadDword("LogLevel", tmp)) {
             if (tmp <= static_cast<uint32_t>(LogLevel::Error)) {
@@ -89,31 +89,63 @@ namespace droute {
         g_proxyAddr.sin_family = AF_INET;
         g_proxyAddr.sin_port = htons(static_cast<uint16_t>(port));
 
-        if (inet_pton(AF_INET, host.c_str(), &g_proxyAddr.sin_addr) == 1) {
-        } else {
-            addrinfo hints = {};
-            hints.ai_family = AF_INET;
-            hints.ai_socktype = SOCK_STREAM;
-            addrinfo* result = nullptr;
-            const int gaiError = getaddrinfo(host.c_str(), nullptr, &hints, &result);
-            if (gaiError == 0 && result) {
-                g_proxyAddr.sin_addr = reinterpret_cast<sockaddr_in*>(result->ai_addr)->sin_addr;
-                freeaddrinfo(result);
-            } else {
-                LOG_ERROR("failed to resolve '%s': %d; using 127.0.0.1", host.c_str(), gaiError);
-                inet_pton(AF_INET, "127.0.0.1", &g_proxyAddr.sin_addr);
-            }
-        }
+        if (inet_pton(AF_INET, host.c_str(), &g_proxyAddr.sin_addr) != 1)
+            g_proxyAddr.sin_addr.s_addr = INADDR_NONE;
 
         const char* authState =
             user.empty() && password.empty() ? "none" : (!user.empty() && !password.empty() ? "set" : "incomplete");
         if (strcmp(authState, "incomplete") == 0)
             LOG_WARN("proxy credentials are incomplete; authentication is disabled");
 
-        LOG_INFO("config source=%s proxy=%s auth=%s connect_timeout_ms=%u reconnect_interval_ms=%u log_level=%s",
-                 hasRegistryConfig ? "registry" : "defaults", FormatAddress(g_proxyAddr).c_str(), authState,
-                 connectTimeout, reconnectInterval, LevelToString(logLevel));
+        LOG_INFO("config source=%s proxy=%s:%u auth=%s connect_timeout_ms=%u reconnect_interval_ms=%u log_level=%s",
+                 hasRegistryConfig ? "registry" : "defaults", host.c_str(), port, authState, connectTimeout,
+                 reconnectInterval, LevelToString(logLevel));
         return hasRegistryConfig;
+    }
+
+    static INIT_ONCE g_resolveOnce = INIT_ONCE_STATIC_INIT;
+    static sockaddr_in g_resolvedProxy = {};
+    static thread_local bool g_resolvingProxy = false;
+
+    bool IsResolvingProxy() {
+        return g_resolvingProxy;
+    }
+
+    static BOOL CALLBACK ResolveProxy(PINIT_ONCE, void*, void**) {
+        g_resolvingProxy = true;
+
+        struct ResolveScope {
+            ~ResolveScope() {
+                g_resolvingProxy = false;
+            }
+        } scope;
+
+        addrinfo hints = {};
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        addrinfo* result = nullptr;
+        int error = getaddrinfo(g_cfg.host.c_str(), nullptr, &hints, &result);
+        if (error || !result) {
+            LOG_ERROR("failed to resolve proxy host '%s': %d", g_cfg.host.c_str(), error);
+            return FALSE;
+        }
+        g_resolvedProxy = g_proxyAddr;
+        g_resolvedProxy.sin_addr = reinterpret_cast<sockaddr_in*>(result->ai_addr)->sin_addr;
+        freeaddrinfo(result);
+        return TRUE;
+    }
+
+    bool GetProxyAddress(sockaddr_in& address) {
+        if (g_proxyAddr.sin_addr.s_addr != INADDR_NONE) {
+            address = g_proxyAddr;
+            return true;
+        }
+        if (!InitOnceExecuteOnce(&g_resolveOnce, ResolveProxy, nullptr, nullptr)) {
+            WSASetLastError(WSAHOST_NOT_FOUND);
+            return false;
+        }
+        address = g_resolvedProxy;
+        return true;
     }
 
 }

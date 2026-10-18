@@ -105,7 +105,7 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="src\exports.hpp" />
+    <ClInclude Include="src\dllmain.hpp" />
     <ClInclude Include="src\core\config.hpp" />
     <ClInclude Include="src\core\logger.hpp" />
     <ClInclude Include="src\core\utils.hpp" />
@@ -120,7 +120,7 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="src\exports.cpp" />
+    <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\core\config.cpp" />
     <ClCompile Include="src\core\logger.cpp" />
     <ClCompile Include="src\core\utils.cpp" />

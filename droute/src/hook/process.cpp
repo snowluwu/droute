@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "src/dllmain.hpp"
 #include "src/hook/process.hpp"
 #include "src/hook/hooks.hpp"
 #include "src/core/logger.hpp"
@@ -15,44 +16,6 @@ namespace droute {
     static bool IsDiscordApp(const std::wstring& name) {
         return _wcsicmp(name.c_str(), L"Discord.exe") == 0 || _wcsicmp(name.c_str(), L"DiscordCanary.exe") == 0 ||
                _wcsicmp(name.c_str(), L"DiscordPTB.exe") == 0;
-    }
-
-    static std::wstring GetBranchRoot(const std::wstring& exePath) {
-        size_t appPos = exePath.rfind(L"\\app-");
-        if (appPos == std::wstring::npos)
-            return L"";
-        return exePath.substr(0, appPos);
-    }
-
-    static std::wstring FindLatestAppDir(const std::wstring& branchRoot) {
-        std::wstring pattern = branchRoot + L"\\app-*";
-        WIN32_FIND_DATAW fd;
-        HANDLE hFind = FindFirstFileW(pattern.c_str(), &fd);
-
-        if (hFind == INVALID_HANDLE_VALUE)
-            return L"";
-
-        std::wstring latest;
-        uint64_t bestVer = 0;
-
-        do {
-            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-                continue;
-
-            std::wstring verStr = fd.cFileName + 4;
-            int a = 0, b = 0, c = 0, d = 0;
-            if (swscanf_s(verStr.c_str(), L"%d.%d.%d.%d", &a, &b, &c, &d) < 3)
-                continue;
-
-            uint64_t ver = ((uint64_t)a << 48) | ((uint64_t)b << 32) | ((uint64_t)c << 16) | (uint64_t)d;
-            if (ver > bestVer) {
-                bestVer = ver;
-                latest = branchRoot + L"\\" + fd.cFileName;
-            }
-        } while (FindNextFileW(hFind, &fd));
-
-        FindClose(hFind);
-        return latest;
     }
 
     static void DeployDlls(const std::wstring& targetDir) {
@@ -89,7 +52,9 @@ BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
                                 BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment,
                                 LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo,
                                 LPPROCESS_INFORMATION lpProcessInformation) {
-    // deploy DLLs before call so new process starts with version.dll
+    if (!droute::IsInitializingRuntime())
+        droute::EnsureRuntime();
+    // deploy before the new process loads version.dll
     std::wstring exePath;
 
     if (lpApplicationName && lpApplicationName[0]) {
@@ -129,13 +94,14 @@ BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
 
                 LOG_INFO("discord launch detected: %S", exePath.c_str());
 
-                std::wstring branchRoot = droute::GetBranchRoot(exePath);
-                if (!branchRoot.empty()) {
-                    std::wstring latestDir = droute::FindLatestAppDir(branchRoot);
-                    if (!latestDir.empty()) {
-                        LOG_INFO("latest version dir: %S", latestDir.c_str());
-                        droute::DeployDlls(latestDir);
-                    }
+                const size_t appSeparator = targetDir.find_last_of(L"\\/");
+                const std::wstring appName = targetDir.substr(appSeparator + 1);
+                const std::wstring branchRoot = targetDir.substr(0, appSeparator);
+                const size_t branchSeparator = branchRoot.find_last_of(L"\\/");
+                const std::wstring branchName = branchRoot.substr(branchSeparator + 1);
+                if (appSeparator != std::wstring::npos && appName.compare(0, 4, L"app-") == 0 && appName.size() > 4 &&
+                    _wcsicmp((branchName + L".exe").c_str(), fileName.c_str()) == 0) {
+                    droute::DeployDlls(targetDir);
                 }
             }
         }

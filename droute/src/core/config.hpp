@@ -18,6 +18,9 @@ namespace droute {
         bool Load();
     };
 
+    bool GetProxyAddress(sockaddr_in& address);
+    bool IsResolvingProxy();
+
     extern Config g_cfg;
     extern sockaddr_in g_proxyAddr;
 
