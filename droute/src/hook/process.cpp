@@ -9,8 +9,7 @@ namespace droute {
     std::wstring g_ourDir;
 
     namespace Hooks {
-        BOOL(WINAPI* Real_CreateProcessW)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD,
-                                          LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION) = CreateProcessW;
+        decltype(&CreateProcessW) Real_CreateProcessW = CreateProcessW;
     }
 
     static bool IsDiscordApp(const std::wstring& name) {
@@ -19,41 +18,32 @@ namespace droute {
     }
 
     static void DeployDlls(const std::wstring& targetDir) {
-        std::wstring proxySrc = g_ourDir + L"\\version.dll";
-        std::wstring proxyDst = targetDir + L"\\version.dll";
-        std::wstring payloadSrc = g_ourDir + L"\\droute.dll";
-        std::wstring payloadDst = targetDir + L"\\droute.dll";
+        const wchar_t* files[] = {L"version.dll", L"droute.dll"};
+        for (const wchar_t* name : files) {
+            const std::wstring source = g_ourDir + L"\\" + name;
+            const std::wstring destination = targetDir + L"\\" + name;
+            if (GetFileAttributesW(destination.c_str()) != INVALID_FILE_ATTRIBUTES)
+                continue;
+            if (GetFileAttributesW(source.c_str()) == INVALID_FILE_ATTRIBUTES)
+                continue;
 
-        if (GetFileAttributesW(proxyDst.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            if (GetFileAttributesW(proxySrc.c_str()) != INVALID_FILE_ATTRIBUTES) {
-                if (CopyFileW(proxySrc.c_str(), proxyDst.c_str(), FALSE)) {
-                    LOG_INFO("deployed version.dll -> %S", proxyDst.c_str());
-                } else {
-                    LOG_WARN("copy version.dll failed: %u", GetLastError());
-                }
-            }
-        }
-
-        if (GetFileAttributesW(payloadDst.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            if (GetFileAttributesW(payloadSrc.c_str()) != INVALID_FILE_ATTRIBUTES) {
-                if (CopyFileW(payloadSrc.c_str(), payloadDst.c_str(), FALSE)) {
-                    LOG_INFO("deployed droute.dll -> %S", payloadDst.c_str());
-                } else {
-                    LOG_WARN("copy droute.dll failed: %u", GetLastError());
-                }
-            }
+            if (CopyFileW(source.c_str(), destination.c_str(), FALSE))
+                LOG_INFO("deployed %S -> %S", name, destination.c_str());
+            else
+                LOG_WARN("copy %S failed: %u", name, GetLastError());
         }
     }
 
 }
 
 BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
-                                LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes,
-                                BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment,
-                                LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo,
-                                LPPROCESS_INFORMATION lpProcessInformation) {
+    LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes,
+    BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory,
+    LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation)
+{
     if (!droute::IsInitializingRuntime())
         droute::EnsureRuntime();
+
     // deploy before the new process loads version.dll
     std::wstring exePath;
 
@@ -107,7 +97,7 @@ BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
         }
     }
 
-    return droute::Hooks::Real_CreateProcessW(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes,
-                                              bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory,
-                                              lpStartupInfo, lpProcessInformation);
+    return droute::Hooks::Real_CreateProcessW(lpApplicationName, lpCommandLine, lpProcessAttributes,
+        lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment,
+        lpCurrentDirectory, lpStartupInfo, lpProcessInformation);
 }

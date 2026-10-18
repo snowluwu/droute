@@ -51,14 +51,14 @@ namespace droute {
         return "unknown";
     }
 
-    void LogUdpAssociationStart(SOCKET s, const UdpAssociation& a, const char* trigger) {
+    static void LogUdpAssociationStart(SOCKET s, const UdpAssociation& a, const char* trigger) {
         Logger::ErrorScope preserveError;
         const LogLevel level = a.attempts == 1 || a.lastAssociationError == 0 ? LogLevel::Info : LogLevel::Debug;
         DROUTE_LOG(level, "event=udp.associate.start flow=%llu socket=%llu attempt=%llu trigger=%s proxy=%s", a.flowId,
                    (ULONG_PTR)s, a.attempts, trigger, FormatAddress(g_proxyAddr).c_str());
     }
 
-    void LogUdpAssociationResult(SOCKET s, const UdpAssociation& a, bool ok, int error, const char* stage) {
+    static void LogUdpAssociationResult(SOCKET s, const UdpAssociation& a, bool ok, int error, const char* stage) {
         Logger::ErrorScope preserveError;
         const uint64_t elapsed = GetTickCount64() - a.attemptStartedAt;
         if (ok) {
@@ -114,7 +114,7 @@ namespace droute {
         Logger::ErrorScope preserveError;
         observation.api = api;
         observation.startedAt = GetTickCount64();
-        std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+        std::lock_guard<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(s);
         if (it == g_udpMap.end())
             return;
@@ -133,7 +133,7 @@ namespace droute {
         Logger::ErrorScope preserveError;
         const uint64_t now = GetTickCount64();
         const char* direction = kind == UdpIoKind::Send ? "send" : "receive";
-        std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+        std::lock_guard<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(s);
         if (it == g_udpMap.end() || it->second.flowId != observation.flowId) {
             LOG_DEBUG("event=udp.io.late_completion flow=%llu socket=%llu generation=%llu direction=%s api=%s "
@@ -176,14 +176,17 @@ namespace droute {
                     source ? FormatAddress(*source).c_str() : "none");
             }
         }
+        const char* route = "direct";
+        if (observation.dropped)
+            route = "dropped";
+        else if (observation.proxied)
+            route = "proxy";
+        else if (error)
+            route = "unknown";
         LOG_TRACE("event=udp.io.complete flow=%llu socket=%llu generation=%llu direction=%s api=%s completion_api=%s "
                   "route=%s bytes=%lu error=%d elapsed_ms=%llu",
                   a.flowId, (ULONG_PTR)s, observation.generation, direction, observation.api, observation.completionApi,
-                  observation.dropped   ? "dropped"
-                  : observation.proxied ? "proxy"
-                  : error               ? "unknown"
-                                        : "direct",
-                  bytes, error, now - observation.startedAt);
+                  route, bytes, error, now - observation.startedAt);
     }
 
     struct UdpIoOperation {
@@ -332,7 +335,7 @@ namespace droute {
         for (const WSABUF& buffer : buffers) {
             if (copied >= length)
                 break;
-            const DWORD chunk = (std::min)(buffer.len, length - copied);
+            const DWORD chunk = std::min(buffer.len, length - copied);
             if (chunk != 0)
                 memcpy(buffer.buf, source + copied, chunk);
             copied += chunk;
@@ -359,9 +362,12 @@ namespace droute {
 
         std::shared_lock<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(operation.socket);
-        return it != g_udpMap.end() && it->second.flowId == operation.observation.flowId &&
-               std::any_of(it->second.relays.begin(), it->second.relays.end(),
-                           [&](const sockaddr_in& relay) { return IsSameAddr(source, relay); });
+        if (it == g_udpMap.end() || it->second.flowId != operation.observation.flowId)
+            return false;
+        for (const auto& relay : it->second.relays)
+            if (IsSameAddr(source, relay))
+                return true;
+        return false;
     }
 
     static UdpCompletion CompleteUdpIo(UdpIoOperation& operation, int operationError, DWORD transferred,
@@ -402,7 +408,7 @@ namespace droute {
         if (operation.kind == UdpIoKind::Send) {
             if (transferred >= operation.proxyHeaderSize) {
                 operation.completedBytes =
-                    (std::min)(operation.applicationBufferSize, transferred - operation.proxyHeaderSize);
+                    std::min(operation.applicationBufferSize, transferred - operation.proxyHeaderSize);
             }
             return {operation.completedBytes, 0};
         }
@@ -449,7 +455,7 @@ namespace droute {
 
         const DWORD available = operation.applicationBufferSize;
         operation.completedSource = source;
-        const DWORD copied = (std::min)(available, static_cast<DWORD>(payloadLength));
+        const DWORD copied = std::min(available, static_cast<DWORD>(payloadLength));
         ScatterApplicationBuffers(payload, copied, operation.applicationBuffers);
         operation.completedBytes = copied;
 
@@ -493,7 +499,7 @@ namespace droute {
         }
         g_udpIoOperations.emplace(operation->overlapped, operation);
         {
-            std::unique_lock<std::shared_mutex> stateLock(g_stateMutex);
+            std::lock_guard<std::shared_mutex> stateLock(g_stateMutex);
             auto it = g_udpMap.find(operation->socket);
             if (it != g_udpMap.end() && it->second.flowId == operation->observation.flowId) {
                 ++it->second.pendingIo;
@@ -534,7 +540,7 @@ namespace droute {
     }
 
     static void TrackUdpSocket(SOCKET s) {
-        std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+        std::lock_guard<std::shared_mutex> lock(g_stateMutex);
         if (g_udpMap.find(s) != g_udpMap.end())
             return;
 
@@ -553,7 +559,7 @@ namespace droute {
 
     void MarkUdpAssociationPending(SOCKET s, SOCKET expectedControlSocket, const char* reason, int error) {
         Logger::ErrorScope preserveError;
-        std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+        std::lock_guard<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(s);
         if (it == g_udpMap.end())
             return;
@@ -572,9 +578,8 @@ namespace droute {
         g_udpAssociationChanged.notify_all();
     }
 
-    bool TryUdpAssociate(UdpAssociation& out, uint64_t deadline) {
+    static bool TryUdpAssociate(UdpAssociation& out, uint64_t deadline) {
         out = {};
-        out.status = UdpAssociation::Status::Idle;
 
         out.associationStage = "socket_create";
         SOCKET ctrl = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -624,7 +629,7 @@ namespace droute {
         return true;
     }
 
-    bool ActivateUdpRelay(SOCKET s, std::unique_lock<std::shared_mutex>& lock,
+    static bool ActivateUdpRelay(SOCKET s, std::unique_lock<std::shared_mutex>& lock,
                           std::map<SOCKET, UdpAssociation>::iterator& it, uint64_t deadline, const char* trigger) {
         if (it->second.status == UdpAssociation::Status::Associating)
             return false;
@@ -665,8 +670,14 @@ namespace droute {
                 Hooks::Real_closesocket(it->second.ctrlSocket);
             it->second.ctrlSocket = temp.ctrlSocket;
             it->second.relayAddr = temp.relayAddr;
-            if (std::none_of(it->second.relays.begin(), it->second.relays.end(),
-                             [&](const sockaddr_in& relay) { return IsSameAddr(relay, temp.relayAddr); }))
+            bool knownRelay = false;
+            for (const auto& relay : it->second.relays) {
+                if (IsSameAddr(relay, temp.relayAddr)) {
+                    knownRelay = true;
+                    break;
+                }
+            }
+            if (!knownRelay)
                 it->second.relays.push_back(temp.relayAddr);
             it->second.status = UdpAssociation::Status::Associated;
             ++it->second.generation;
@@ -685,36 +696,36 @@ namespace droute {
 
     static void CALLBACK AssociateWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
         CallbackMayRunLong(instance);
-        std::unique_ptr<std::pair<SOCKET, uint64_t>> key(static_cast<std::pair<SOCKET, uint64_t>*>(context));
+        std::unique_ptr<UdpFlow> key(static_cast<UdpFlow*>(context));
         std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-        auto it = g_udpMap.find(key->first);
-        if (it == g_udpMap.end() || it->second.flowId != key->second)
+        auto it = g_udpMap.find(key->socket);
+        if (it == g_udpMap.end() || it->second.flowId != key->flowId)
             return;
         it->second.associationQueued = false;
         if (it->second.status != UdpAssociation::Status::PendingAssociate)
             return;
         try {
-            ActivateUdpRelay(key->first, lock, it, MakeDeadline(g_cfg.connectTimeout), "worker");
+            ActivateUdpRelay(key->socket, lock, it, MakeDeadline(g_cfg.connectTimeout), "worker");
         } catch (...) {
             if (!lock.owns_lock())
                 lock.lock();
-            it = g_udpMap.find(key->first);
-            if (it != g_udpMap.end() && it->second.flowId == key->second) {
+            it = g_udpMap.find(key->socket);
+            if (it != g_udpMap.end() && it->second.flowId == key->flowId) {
                 it->second.status = UdpAssociation::Status::PendingAssociate;
                 it->second.lastAssociationError = WSAENOBUFS;
                 g_udpAssociationChanged.notify_all();
             }
-            LOG_ERROR("event=udp.associate.worker_failed socket=%llu", (ULONG_PTR)key->first);
+            LOG_ERROR("event=udp.associate.worker_failed socket=%llu", (ULONG_PTR)key->socket);
         }
     }
 
     void QueueUdpAssociation(SOCKET socket) {
-        std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+        std::lock_guard<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(socket);
         if (it == g_udpMap.end() || it->second.status != UdpAssociation::Status::PendingAssociate ||
             it->second.associationQueued || GetTickCount64() < it->second.retryAt)
             return;
-        auto context = std::make_unique<std::pair<SOCKET, uint64_t>>(socket, it->second.flowId);
+        auto context = std::make_unique<UdpFlow>(UdpFlow{socket, it->second.flowId});
         if (TrySubmitThreadpoolCallback(AssociateWorker, context.get(), nullptr)) {
             it->second.associationQueued = true;
             context.release();
@@ -863,7 +874,7 @@ namespace droute {
             IsDirectUdpDestination(*reinterpret_cast<const sockaddr_in*>(address))) {
             int result = Hooks::Real_connect(socket, address, length);
             if (result == 0) {
-                std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+                std::lock_guard<std::shared_mutex> lock(g_stateMutex);
                 auto it = g_udpMap.find(socket);
                 if (it != g_udpMap.end())
                     it->second.connected = false;
@@ -883,7 +894,7 @@ namespace droute {
         TrackUdpSocket(socket);
         const auto peer = *reinterpret_cast<const sockaddr_in*>(address);
         {
-            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            std::lock_guard<std::shared_mutex> lock(g_stateMutex);
             auto it = g_udpMap.find(socket);
             if (it == g_udpMap.end()) {
                 WSASetLastError(WSAENOTSOCK);
@@ -950,9 +961,9 @@ namespace droute {
     };
 
     static std::mutex g_sendQueueMutex;
-    static std::map<std::pair<SOCKET, uint64_t>, SendQueue> g_sendQueues;
+    static std::map<UdpFlow, SendQueue> g_sendQueues;
 
-    static void FailQueuedSends(const std::pair<SOCKET, uint64_t>& key, int error) {
+    static void FailQueuedSends(const UdpFlow& key, int error) {
         std::deque<std::shared_ptr<UdpIoOperation>> pending;
         {
             std::lock_guard<std::mutex> lock(g_sendQueueMutex);
@@ -968,7 +979,7 @@ namespace droute {
 
     static void CALLBACK SendQueueWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
         CallbackMayRunLong(instance);
-        std::unique_ptr<std::pair<SOCKET, uint64_t>> key(static_cast<std::pair<SOCKET, uint64_t>*>(context));
+        std::unique_ptr<UdpFlow> key(static_cast<UdpFlow*>(context));
         for (;;) {
             std::shared_ptr<UdpIoOperation> operation;
             {
@@ -996,7 +1007,7 @@ namespace droute {
                 sockaddr_in relay = {};
                 SOCKET control = INVALID_SOCKET;
                 const auto status = GetUdpRelayForSend(operation->socket, relay, control, operation->destination,
-                                                       "send_queue", key->second, true, operation->deadline);
+                                                       "send_queue", key->flowId, true, operation->deadline);
                 if (status == UdpSendStatus::Unavailable) {
                     operation->observation.dropped = true;
                     FinishQueuedSend(operation, 0, static_cast<DWORD>(operation->buffer.size()));
@@ -1030,7 +1041,7 @@ namespace droute {
                 {
                     std::shared_lock<std::shared_mutex> lock(g_stateMutex);
                     auto it = g_udpMap.find(operation->socket);
-                    if (it != g_udpMap.end() && it->second.flowId == key->second && !operation->notified.load()) {
+                    if (it != g_udpMap.end() && it->second.flowId == key->flowId && !operation->notified.load()) {
                         result = Hooks::Real_WSASendTo(operation->socket, &buffer, 1, &sent, operation->sendFlags,
                                                        reinterpret_cast<sockaddr*>(&relay), sizeof(relay), &overlapped,
                                                        nullptr);
@@ -1075,7 +1086,7 @@ namespace droute {
             GetSocketCompletionPort(operation->socket, operation->completionPort, operation->completionKey);
         }
         std::lock_guard<std::mutex> lock(g_sendQueueMutex);
-        auto key = std::make_pair(operation->socket, operation->observation.flowId);
+        const UdpFlow key{operation->socket, operation->observation.flowId};
         auto& queue = g_sendQueues[key];
         if (queue.bytes + operation->buffer.size() > 1024 * 1024 || queue.packets.size() >= 256) {
             WSASetLastError(WSAENOBUFS);
@@ -1093,7 +1104,7 @@ namespace droute {
         queue.packets.push_back(operation);
         queue.bytes += operation->buffer.size();
         if (!queue.running) {
-            auto context = std::make_unique<std::pair<SOCKET, uint64_t>>(key);
+            auto context = std::make_unique<UdpFlow>(key);
             if (!TrySubmitThreadpoolCallback(SendQueueWorker, context.get(), nullptr)) {
                 queue.packets.pop_back();
                 queue.bytes -= operation->buffer.size();
@@ -1122,7 +1133,7 @@ namespace droute {
             flow = it->second.flowId;
         }
         std::lock_guard<std::mutex> lock(g_sendQueueMutex);
-        return g_sendQueues.count(std::make_pair(socket, flow)) != 0;
+        return g_sendQueues.count({socket, flow}) != 0;
     }
 
     static bool CancelQueuedSends(SOCKET socket, LPWSAOVERLAPPED overlapped = nullptr) {
@@ -1142,8 +1153,7 @@ namespace droute {
     decltype(&CancelIoEx) Real_CancelIoEx = CancelIoEx;
 
     BOOL WINAPI Mine_CancelIoEx(HANDLE file, LPOVERLAPPED overlapped) {
-        const bool cancelled =
-            CancelQueuedSends(reinterpret_cast<SOCKET>(file), reinterpret_cast<LPWSAOVERLAPPED>(overlapped));
+        const bool cancelled = CancelQueuedSends(reinterpret_cast<SOCKET>(file), overlapped);
         BOOL result = Real_CancelIoEx(file, overlapped);
         return result || cancelled;
     }
@@ -1489,7 +1499,7 @@ namespace droute {
                                                             milliseconds);
         int error = result ? 0 : static_cast<int>(GetLastError());
 
-        LPWSAOVERLAPPED completed = overlapped ? reinterpret_cast<LPWSAOVERLAPPED>(*overlapped) : nullptr;
+        LPWSAOVERLAPPED completed = overlapped ? *overlapped : nullptr;
         auto operation = TakeUdpIo(completed);
         if (!operation) {
             if (!result)
@@ -1521,7 +1531,7 @@ namespace droute {
         }
 
         for (ULONG i = 0; i < *removed; ++i) {
-            auto operation = TakeUdpIo(reinterpret_cast<LPWSAOVERLAPPED>(entries[i].lpOverlapped));
+            auto operation = TakeUdpIo(entries[i].lpOverlapped);
             if (!operation)
                 continue;
 
@@ -1551,7 +1561,7 @@ namespace droute {
             return result;
         }
 
-        auto operation = TakeUdpIo(reinterpret_cast<LPWSAOVERLAPPED>(overlapped));
+        auto operation = TakeUdpIo(overlapped);
         if (!operation) {
             if (!result)
                 SetLastError(error);
@@ -1571,8 +1581,7 @@ namespace droute {
 
     BOOL WINAPI Mine_GetOverlappedResult(HANDLE file, LPOVERLAPPED overlapped, LPDWORD bytesTransferred, BOOL wait) {
         BOOL queuedResult;
-        if (QueuedResult(reinterpret_cast<LPWSAOVERLAPPED>(overlapped), wait ? INFINITE : 0, FALSE, bytesTransferred,
-                         queuedResult))
+        if (QueuedResult(overlapped, wait ? INFINITE : 0, FALSE, bytesTransferred, queuedResult))
             return queuedResult;
         BOOL result = Hooks::Real_GetOverlappedResult(file, overlapped, bytesTransferred, wait);
         DWORD error = result ? ERROR_SUCCESS : GetLastError();
@@ -1582,8 +1591,7 @@ namespace droute {
     BOOL WINAPI Mine_GetOverlappedResultEx(HANDLE file, LPOVERLAPPED overlapped, LPDWORD bytesTransferred,
                                            DWORD milliseconds, BOOL alertable) {
         BOOL queuedResult;
-        if (QueuedResult(reinterpret_cast<LPWSAOVERLAPPED>(overlapped), milliseconds, alertable, bytesTransferred,
-                         queuedResult))
+        if (QueuedResult(overlapped, milliseconds, alertable, bytesTransferred, queuedResult))
             return queuedResult;
         BOOL result = Hooks::Real_GetOverlappedResultEx(file, overlapped, bytesTransferred, milliseconds, alertable);
         DWORD error = result ? ERROR_SUCCESS : GetLastError();
@@ -1609,7 +1617,7 @@ namespace droute {
         uint64_t createdAt = 0;
         TcpConnection tcp;
         {
-            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            std::lock_guard<std::shared_mutex> lock(g_stateMutex);
             auto it = g_udpMap.find(s);
             if (it != g_udpMap.end()) {
                 flow = it->second.flowId;
@@ -1646,7 +1654,7 @@ namespace droute {
         const int result = Hooks::Real_WSAEventSelect(s, hEventObject, lNetworkEvents);
         resultError.error = GetLastError();
         if (result == 0) {
-            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            std::lock_guard<std::shared_mutex> lock(g_stateMutex);
             // cancelling notifications leaves the socket nonblocking
             g_nonBlockingSockets.insert(s);
         }
@@ -1661,7 +1669,7 @@ namespace droute {
         const int result = Hooks::Real_WSAAsyncSelect(s, hWnd, wMsg, lEvent);
         resultError.error = GetLastError();
         if (result == 0) {
-            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            std::lock_guard<std::shared_mutex> lock(g_stateMutex);
             g_nonBlockingSockets.insert(s);
         }
         LOG_DEBUG("event=socket.notification socket=%llu api=WSAAsyncSelect window=%p message=%u mask=0x%lX result=%d "
@@ -1685,7 +1693,7 @@ namespace droute {
         if (result == 0) {
             const bool nonblocking = *argp != 0;
             mode = nonblocking ? "yes" : "no";
-            std::unique_lock<std::shared_mutex> lock(g_stateMutex);
+            std::lock_guard<std::shared_mutex> lock(g_stateMutex);
             if (nonblocking) {
                 g_nonBlockingSockets.insert(s);
             } else {

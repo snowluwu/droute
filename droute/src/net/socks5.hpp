@@ -8,12 +8,6 @@ namespace droute {
         constexpr int UdpHeaderSize = 10;
         constexpr int UdpMaxHeaderSize = 262;
 
-        struct Reply {
-            uint8_t rep;
-            uint8_t atyp;
-            sockaddr_in boundAddr;
-        };
-
         bool Handshake(SOCKET s, const char* user, const char* pass, uint64_t deadline);
         bool RequestConnect(SOCKET s, const sockaddr_in& target, uint64_t deadline);
         bool RequestUdpAssociate(SOCKET ctrl, sockaddr_in& outRelay, uint64_t deadline);

@@ -11,6 +11,7 @@ namespace droute {
         HKEY hKey = nullptr;
         LONG res = RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\droute", 0, KEY_READ, &hKey);
         const bool hasRegistryConfig = res == ERROR_SUCCESS;
+
         if (!hasRegistryConfig)
             LOG_WARN("registry key not found (error=%ld), using defaults", res);
 
@@ -50,6 +51,7 @@ namespace droute {
             host = "127.0.0.1";
             LOG_WARN("proxy host is empty, using default %s", host.c_str());
         }
+
         uint32_t portTmp = port;
         if (ReadDword("Port", portTmp)) {
             if (portTmp > 0 && portTmp <= UINT16_MAX) {
@@ -58,6 +60,7 @@ namespace droute {
                 LOG_WARN("invalid proxy port %u, using default %u", portTmp, port);
             }
         }
+
         ReadString("User", user);
         ReadString("Password", password);
 
@@ -85,21 +88,25 @@ namespace droute {
         if (hKey)
             RegCloseKey(hKey);
 
-        memset(&g_proxyAddr, 0, sizeof(g_proxyAddr));
+        g_proxyAddr = {};
         g_proxyAddr.sin_family = AF_INET;
-        g_proxyAddr.sin_port = htons(static_cast<uint16_t>(port));
+        g_proxyAddr.sin_port = htons(port);
 
         if (inet_pton(AF_INET, host.c_str(), &g_proxyAddr.sin_addr) != 1)
             g_proxyAddr.sin_addr.s_addr = INADDR_NONE;
 
-        const char* authState =
-            user.empty() && password.empty() ? "none" : (!user.empty() && !password.empty() ? "set" : "incomplete");
-        if (strcmp(authState, "incomplete") == 0)
+        const char* authState = "set";
+        if (user.empty() && password.empty()) {
+            authState = "none";
+        } else if (user.empty() || password.empty()) {
+            authState = "incomplete";
             LOG_WARN("proxy credentials are incomplete; authentication is disabled");
+        }
 
         LOG_INFO("config source=%s proxy=%s:%u auth=%s connect_timeout_ms=%u reconnect_interval_ms=%u log_level=%s",
                  hasRegistryConfig ? "registry" : "defaults", host.c_str(), port, authState, connectTimeout,
                  reconnectInterval, LevelToString(logLevel));
+
         return hasRegistryConfig;
     }
 

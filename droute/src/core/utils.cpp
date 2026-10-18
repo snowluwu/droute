@@ -8,6 +8,7 @@ namespace droute {
         if (addr.sin_family != AF_INET)
             return false;
         uint32_t ip = ntohl(addr.sin_addr.s_addr);
+        // loopback, private networks and link-local addresses
         if ((ip & 0xFF000000) == 0x7F000000)
             return true;
         if ((ip & 0xFF000000) == 0x0A000000)
@@ -87,7 +88,7 @@ namespace droute {
         return true;
     }
 
-    bool WaitForSocket(SOCKET s, bool write, int timeoutMs) {
+    static bool WaitForSocket(SOCKET s, bool write, int timeoutMs) {
         if (timeoutMs <= 0) {
             WSASetLastError(WSAETIMEDOUT);
             return false;
@@ -156,47 +157,43 @@ namespace droute {
     }
 
     bool SendAll(SOCKET s, const void* data, int len, uint64_t deadline) {
-        const char* p = static_cast<const char*>(data);
+        const char* bytes = static_cast<const char*>(data);
         int sent = 0;
         while (sent < len) {
-            int n = Hooks::Real_send(s, p + sent, len - sent, 0);
-            if (n > 0) {
-                sent += n;
-            } else if (n == 0) {
+            int written = Hooks::Real_send(s, bytes + sent, len - sent, 0);
+            if (written > 0) {
+                sent += written;
+                continue;
+            }
+            if (written == 0) {
                 WSASetLastError(WSAECONNRESET);
                 return false;
-            } else {
-                int err = WSAGetLastError();
-                if (err == WSAEWOULDBLOCK) {
-                    if (!WaitForWrite(s, RemainingTimeout(deadline)))
-                        return false;
-                } else {
-                    return false;
-                }
             }
+            if (WSAGetLastError() != WSAEWOULDBLOCK)
+                return false;
+            if (!WaitForWrite(s, RemainingTimeout(deadline)))
+                return false;
         }
         return true;
     }
 
     bool RecvAll(SOCKET s, void* buf, int len, uint64_t deadline) {
-        char* p = static_cast<char*>(buf);
-        int recvd = 0;
-        while (recvd < len) {
-            int n = Hooks::Real_recv(s, p + recvd, len - recvd, 0);
-            if (n > 0) {
-                recvd += n;
-            } else if (n == 0) {
+        char* bytes = static_cast<char*>(buf);
+        int received = 0;
+        while (received < len) {
+            int count = Hooks::Real_recv(s, bytes + received, len - received, 0);
+            if (count > 0) {
+                received += count;
+                continue;
+            }
+            if (count == 0) {
                 WSASetLastError(WSAECONNRESET);
                 return false;
-            } else {
-                int err = WSAGetLastError();
-                if (err == WSAEWOULDBLOCK) {
-                    if (!WaitForRead(s, RemainingTimeout(deadline)))
-                        return false;
-                } else {
-                    return false;
-                }
             }
+            if (WSAGetLastError() != WSAEWOULDBLOCK)
+                return false;
+            if (!WaitForRead(s, RemainingTimeout(deadline)))
+                return false;
         }
         return true;
     }

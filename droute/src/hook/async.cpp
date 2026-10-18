@@ -29,10 +29,15 @@ namespace droute {
         }
     };
 
+    struct CompletionPort {
+        HANDLE handle;
+        ULONG_PTR key;
+    };
+
     static std::mutex g_asyncMutex;
     static std::condition_variable g_connectionChanged;
     static std::map<SOCKET, std::shared_ptr<AsyncConnection>> g_connections;
-    static std::map<SOCKET, std::pair<HANDLE, ULONG_PTR>> g_completionPorts;
+    static std::map<SOCKET, CompletionPort> g_completionPorts;
     static decltype(&CreateIoCompletionPort) Real_CreateIoCompletionPort = CreateIoCompletionPort;
     static decltype(&ExitProcess) Real_ExitProcess = ExitProcess;
 
@@ -45,8 +50,8 @@ namespace droute {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
         auto it = g_completionPorts.find(socket);
         if (it != g_completionPorts.end()) {
-            port = it->second.first;
-            key = it->second.second;
+            port = it->second.handle;
+            key = it->second.key;
         }
     }
 
@@ -58,7 +63,7 @@ namespace droute {
             if (!getsockopt(reinterpret_cast<SOCKET>(file), SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&type),
                             &size)) {
                 std::lock_guard<std::mutex> lock(g_asyncMutex);
-                g_completionPorts.emplace(reinterpret_cast<SOCKET>(file), std::make_pair(result, key));
+                g_completionPorts.emplace(reinterpret_cast<SOCKET>(file), CompletionPort{result, key});
             }
         }
         return result;
@@ -90,20 +95,27 @@ namespace droute {
 
     static void CALLBACK ConnectWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
         CallbackMayRunLong(instance);
+
+        // the callback owns the context; the connection is shared with socket hooks
         std::unique_ptr<std::shared_ptr<AsyncConnection>> owner(
             static_cast<std::shared_ptr<AsyncConnection>*>(context));
+
         auto connection = *owner;
         const uint64_t started = GetTickCount64();
+
         int error = 0;
         try {
-            if (ConnectViaProxy(connection->transport, &connection->destination, MakeDeadline(g_cfg.connectTimeout)))
+            if (ConnectViaProxy(connection->transport, connection->destination, MakeDeadline(g_cfg.connectTimeout)))
                 error = WSAGetLastError();
         } catch (...) {
             error = WSAENOBUFS;
         }
+
         std::lock_guard<std::mutex> lock(g_asyncMutex);
+
         if (connection->cancelled)
             return;
+
         connection->error = error;
         if (connection->restoreBlocking) {
             u_long blocking = 0;
@@ -112,12 +124,14 @@ namespace droute {
         }
         connection->pending = false;
         g_connectionChanged.notify_all();
+
         // the application's notifications must not expose the socks handshake
         if (connection->window)
             Real_asyncSelect(connection->socket, connection->window, connection->message,
                              connection->events & ~FD_CONNECT);
         else if (connection->event)
             Real_eventSelect(connection->socket, connection->event, connection->events & ~FD_CONNECT);
+
         NotifyConnection(*connection);
         DROUTE_LOG(connection->error ? LogLevel::Warn : LogLevel::Info,
                    "event=tcp.connect.completed socket=%llu error=%d elapsed_ms=%llu", (ULONG_PTR)connection->socket,
@@ -128,33 +142,47 @@ namespace droute {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
         auto& connection = g_connections[socket];
         if (connection && connection->transport != INVALID_SOCKET) {
-            WSASetLastError(connection->pending ? WSAEALREADY : connection->error ? connection->error : WSAEISCONN);
+            int error = WSAEISCONN;
+            if (connection->pending)
+                error = WSAEALREADY;
+            else if (connection->error)
+                error = connection->error;
+            WSASetLastError(error);
             return SOCKET_ERROR;
         }
+
         if (!connection)
             connection = std::make_shared<AsyncConnection>();
         connection->socket = socket;
         connection->destination = destination;
+
         WSAPROTOCOL_INFOW protocol = {};
         if (WSADuplicateSocketW(socket, GetCurrentProcessId(), &protocol))
             return SOCKET_ERROR;
+
         connection->transport =
             WSASocketW(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &protocol, 0, WSA_FLAG_OVERLAPPED);
+
         if (connection->transport == INVALID_SOCKET)
             return SOCKET_ERROR;
+
         if (connection->window)
             Real_asyncSelect(socket, connection->window, 0, 0);
         else if (connection->event)
             Real_eventSelect(socket, nullptr, 0);
+
         auto context = std::make_unique<std::shared_ptr<AsyncConnection>>(connection);
+
         if (!TrySubmitThreadpoolCallback(ConnectWorker, context.get(), nullptr)) {
             connection->pending = false;
             connection->error = WSAENOBUFS;
             WSASetLastError(WSAENOBUFS);
             return SOCKET_ERROR;
         }
+
         context.release();
         WSASetLastError(WSAEWOULDBLOCK);
+
         return SOCKET_ERROR;
     }
 
@@ -162,10 +190,12 @@ namespace droute {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
         g_completionPorts.erase(socket);
         auto it = g_connections.find(socket);
+
         if (it == g_connections.end())
             return;
         it->second->cancelled = true;
         g_connectionChanged.notify_all();
+
         if (it->second->transport != INVALID_SOCKET && it->second->pending)
             shutdown(it->second->transport, SD_BOTH);
         g_connections.erase(it);
@@ -173,10 +203,12 @@ namespace droute {
 
     bool SetConnectingSocketMode(SOCKET socket, bool nonblocking, int& result) {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
+
         auto it = g_connections.find(socket);
         if (it == g_connections.end() || it->second->transport == INVALID_SOCKET || !it->second->pending)
             return false;
         auto& connection = *it->second;
+
         if (!nonblocking && connection.events) {
             result = SOCKET_ERROR;
             WSASetLastError(WSAEINVAL);
@@ -184,45 +216,57 @@ namespace droute {
             connection.restoreBlocking = !nonblocking;
             result = 0;
         }
+
         return true;
     }
 
     static int SocketError(SOCKET socket, bool wait = false) {
         std::unique_lock<std::mutex> lock(g_asyncMutex);
+
         auto it = g_connections.find(socket);
         if (it == g_connections.end() || it->second->transport == INVALID_SOCKET)
             return 0;
+
         auto connection = it->second;
         if (wait && connection->restoreBlocking)
             g_connectionChanged.wait(lock, [&] { return !connection->pending || connection->cancelled; });
+
         if (connection->cancelled)
             return WSAENOTSOCK;
+
         return connection->pending ? WSAEWOULDBLOCK : connection->error;
     }
 
     static int WSAAPI Async_send(SOCKET s, const char* buffer, int length, int flags) {
         sockaddr_in peer;
+
         if (GetUdpPeer(s, peer))
             return Mine_sendto(s, buffer, length, flags, reinterpret_cast<const sockaddr*>(&peer), sizeof(peer));
+
         int error = SocketError(s, true);
         if (!error)
             return Hooks::Real_send(s, buffer, length, flags);
+
         WSASetLastError(error);
+
         return SOCKET_ERROR;
     }
 
     static int WSAAPI Async_recv(SOCKET s, char* buffer, int length, int flags) {
         if (IsTrackedUdpSocket(s))
             return Mine_recvfrom(s, buffer, length, flags, nullptr, nullptr);
+
         int error = SocketError(s, true);
         if (!error)
             return Hooks::Real_recv(s, buffer, length, flags);
+
         WSASetLastError(error);
+
         return SOCKET_ERROR;
     }
 
     static int WSAAPI Async_WSASend(SOCKET s, LPWSABUF buffers, DWORD count, LPDWORD bytes, DWORD flags,
-                                    LPWSAOVERLAPPED overlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE callback) {
+        LPWSAOVERLAPPED overlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE callback) {
         sockaddr_in peer;
         if (GetUdpPeer(s, peer))
             return Mine_WSASendTo(s, buffers, count, bytes, flags, reinterpret_cast<const sockaddr*>(&peer),
@@ -230,18 +274,23 @@ namespace droute {
         int error = SocketError(s, overlapped == nullptr);
         if (!error)
             return Real_WSASend(s, buffers, count, bytes, flags, overlapped, callback);
+
         WSASetLastError(error);
+
         return SOCKET_ERROR;
     }
 
     static int WSAAPI Async_WSARecv(SOCKET s, LPWSABUF buffers, DWORD count, LPDWORD bytes, LPDWORD flags,
-                                    LPWSAOVERLAPPED overlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE callback) {
+        LPWSAOVERLAPPED overlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE callback) {
         if (IsTrackedUdpSocket(s))
             return Mine_WSARecvFrom(s, buffers, count, bytes, flags, nullptr, nullptr, overlapped, callback);
+
         int error = SocketError(s, overlapped == nullptr);
         if (!error)
             return Real_WSARecv(s, buffers, count, bytes, flags, overlapped, callback);
+
         WSASetLastError(error);
+
         return SOCKET_ERROR;
     }
 
@@ -249,12 +298,15 @@ namespace droute {
         sockaddr_in peer;
         if (!GetUdpPeer(s, peer))
             return Real_getpeername(s, address, length);
+
         if (!address || !length || *length < static_cast<int>(sizeof(peer))) {
             WSASetLastError(WSAEFAULT);
             return SOCKET_ERROR;
         }
+
         memcpy(address, &peer, sizeof(peer));
         *length = sizeof(peer);
+
         return 0;
     }
 
@@ -272,12 +324,15 @@ namespace droute {
 
     static int WSAAPI Async_eventSelect(SOCKET s, WSAEVENT event, long events) {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
+
         auto& connection = g_connections[s];
         if (!connection) {
             connection = std::make_shared<AsyncConnection>();
             connection->socket = s;
         }
+
         const bool pending = connection->transport != INVALID_SOCKET && connection->pending;
+
         int result = Real_eventSelect(s, pending ? nullptr : event, pending ? 0 : events);
         if (!result) {
             connection->event = event;
@@ -287,16 +342,19 @@ namespace droute {
             if (connection->transport != INVALID_SOCKET && !connection->pending)
                 NotifyConnection(*connection);
         }
+
         return result;
     }
 
     static int WSAAPI Async_asyncSelect(SOCKET s, HWND window, UINT message, long events) {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
+
         auto& connection = g_connections[s];
         if (!connection) {
             connection = std::make_shared<AsyncConnection>();
             connection->socket = s;
         }
+
         const bool pending = connection->transport != INVALID_SOCKET && connection->pending;
         int result = Real_asyncSelect(s, window, message, pending ? 0 : events);
         if (!result) {
@@ -308,11 +366,13 @@ namespace droute {
             if (connection->transport != INVALID_SOCKET && !connection->pending)
                 NotifyConnection(*connection);
         }
+
         return result;
     }
 
     static int WSAAPI Async_enumEvents(SOCKET s, WSAEVENT event, LPWSANETWORKEVENTS events) {
         std::lock_guard<std::mutex> lock(g_asyncMutex);
+
         int result = Real_WSAEnumNetworkEvents(s, event, events);
         auto it = g_connections.find(s);
         if (!result && events && it != g_connections.end() && it->second->transport != INVALID_SOCKET) {
@@ -326,6 +386,7 @@ namespace droute {
                 connection.completedEvents = 0;
             }
         }
+
         return result;
     }
 
@@ -349,6 +410,7 @@ namespace droute {
                         failed.push_back(s);
                 }
             }
+
             if (!tracked) {
                 const uint64_t remaining = deadline > GetTickCount64() ? deadline - GetTickCount64() : 0;
                 timeval rest{static_cast<long>(remaining / 1000), static_cast<long>((remaining % 1000) * 1000)};
@@ -360,15 +422,19 @@ namespace droute {
                     *except = inputs[2];
                 return Real_select(ignored, read, write, except, timeout ? &rest : nullptr);
             }
+
             timeval slice = {};
             int result = 0;
+
             if (sets[0].fd_count || sets[1].fd_count || sets[2].fd_count) {
                 result = Real_select(ignored, &sets[0], &sets[1], &sets[2], &slice);
                 if (result == SOCKET_ERROR)
                     return result;
             }
+
             for (SOCKET s : failed)
                 FD_SET(s, &sets[2]);
+
             result = sets[0].fd_count + sets[1].fd_count + sets[2].fd_count;
             if (result || GetTickCount64() >= deadline) {
                 if (read)
@@ -379,15 +445,17 @@ namespace droute {
                     *except = sets[2];
                 return result;
             }
+
             const uint64_t now = GetTickCount64();
             if (now < deadline)
-                Sleep(static_cast<DWORD>((std::min)(10ULL, deadline - now)));
+                Sleep(static_cast<DWORD>(std::min(10ULL, deadline - now)));
         }
     }
 
     static int WSAAPI Async_poll(LPWSAPOLLFD descriptors, ULONG count, INT timeout) {
         if (!descriptors)
             return Real_WSAPoll(descriptors, count, timeout);
+
         const uint64_t deadline = timeout < 0 ? UINT64_MAX : GetTickCount64() + timeout;
         for (;;) {
             std::vector<WSAPOLLFD> ready(descriptors, descriptors + count);
@@ -404,18 +472,26 @@ namespace droute {
                 return Real_WSAPoll(
                     descriptors, count,
                     timeout < 0 ? -1 : static_cast<int>(deadline > GetTickCount64() ? deadline - GetTickCount64() : 0));
+
             int result = valid ? Real_WSAPoll(ready.data(), count, 0) : 0;
             if (result == SOCKET_ERROR)
                 return result;
             result = 0;
+
             for (ULONG i = 0; i < count; ++i) {
                 int error = SocketError(descriptors[i].fd);
-                descriptors[i].revents = error                           ? error == WSAEWOULDBLOCK ? 0 : POLLERR
-                                         : ready[i].fd == INVALID_SOCKET ? 0
-                                                                         : ready[i].revents;
+                if (error == WSAEWOULDBLOCK)
+                    descriptors[i].revents = 0;
+                else if (error)
+                    descriptors[i].revents = POLLERR;
+                else if (ready[i].fd == INVALID_SOCKET)
+                    descriptors[i].revents = 0;
+                else
+                    descriptors[i].revents = ready[i].revents;
                 if (descriptors[i].revents)
                     ++result;
             }
+
             if (result || GetTickCount64() >= deadline)
                 return result;
             Sleep(1);
@@ -425,6 +501,7 @@ namespace droute {
     bool InstallAsyncHooks() {
         if (MH_CreateHookApi(L"kernel32.dll", "ExitProcess", (void*)Async_exit, (void**)&Real_ExitProcess) != MH_OK)
             return false;
+
         if (MH_CreateHookApi(L"kernel32.dll", "CreateIoCompletionPort", (void*)Async_completionPort,
                              (void**)&Real_CreateIoCompletionPort) != MH_OK)
             return false;
@@ -451,10 +528,13 @@ namespace droute {
                 return false;
             }
         }
+
         Real_eventSelect = Hooks::Real_WSAEventSelect;
         Real_asyncSelect = Hooks::Real_WSAAsyncSelect;
+
         Hooks::Real_WSAEventSelect = Async_eventSelect;
         Hooks::Real_WSAAsyncSelect = Async_asyncSelect;
+
         return true;
     }
 

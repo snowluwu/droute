@@ -13,6 +13,14 @@ namespace droute {
         DWORD length = 0;
         LogLevel level = LogLevel::Info;
         char text[2500];
+
+        void SetLength(int formattedLength) {
+            // snprintf returns the required length, even when the buffer was too small
+            if (formattedLength <= 0)
+                length = 0;
+            else
+                length = static_cast<DWORD>(std::min(formattedLength, static_cast<int>(sizeof(text) - 1)));
+        }
     };
 
     static std::deque<LogRecord> g_queue;
@@ -159,8 +167,7 @@ namespace droute {
             st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, GetCurrentProcessId(),
             GetCurrentThreadId(), g_sessionId, GetTickCount64() - g_startedAt, LevelToString(level), file, line,
             message);
-        record.length =
-            length > 0 ? static_cast<DWORD>((std::min)(length, static_cast<int>(sizeof(record.text) - 1))) : 0;
+        record.SetLength(length);
     }
 
     static void Enqueue(const LogRecord& record) {
@@ -272,8 +279,7 @@ namespace droute {
                                     "; utc_offset_minutes=%ld; log_writer=async; queue_capacity=%zu\n",
                                     st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
                                     GetCurrentProcessId(), g_sessionId, exePath, offset, QUEUE_CAPACITY);
-        header.length =
-            length > 0 ? static_cast<DWORD>((std::min)(length, static_cast<int>(sizeof(header.text) - 1))) : 0;
+        header.SetLength(length);
         g_accepting.store(true, std::memory_order_release);
         Enqueue(header);
         // do not wait under the loader lock

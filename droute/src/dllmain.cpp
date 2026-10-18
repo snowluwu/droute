@@ -18,15 +18,15 @@ namespace droute {
         return g_initializing;
     }
 
-    void ReconnectWorker() {
+    static void ReconnectWorker() {
         while (WaitForSingleObject(g_stopEvent, g_cfg.reconnectInterval) == WAIT_TIMEOUT) {
-            std::vector<std::pair<SOCKET, uint64_t>> sockets;
+            std::vector<UdpFlow> sockets;
             {
                 std::shared_lock<std::shared_mutex> lock(g_stateMutex);
                 for (const auto& entry : g_udpMap)
-                    sockets.emplace_back(entry.first, entry.second.flowId);
+                    sockets.push_back({entry.first, entry.second.flowId});
             }
-            for (const auto& socket : sockets) {
+            for (const auto& flow : sockets) {
                 SOCKET closedControl = INVALID_SOCKET;
                 UdpAssociation summary;
                 bool writeSummary = false;
@@ -34,9 +34,9 @@ namespace droute {
                 int error = 0;
                 const char* reason = "connected";
                 {
-                    std::unique_lock<std::shared_mutex> lock(g_stateMutex);
-                    auto it = g_udpMap.find(socket.first);
-                    if (it == g_udpMap.end() || it->second.flowId != socket.second)
+                    std::lock_guard<std::shared_mutex> lock(g_stateMutex);
+                    auto it = g_udpMap.find(flow.socket);
+                    if (it == g_udpMap.end() || it->second.flowId != flow.flowId)
                         continue;
                     auto& association = it->second;
                     if (association.status == UdpAssociation::Status::Associated &&
@@ -59,12 +59,12 @@ namespace droute {
                 if (closedControl != INVALID_SOCKET) {
                     Hooks::Real_closesocket(closedControl);
                     LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu trigger=worker reason=%s error=%d",
-                             socket.second, (ULONG_PTR)socket.first, reason, error);
+                             flow.flowId, (ULONG_PTR)flow.socket, reason, error);
                 }
                 if (writeSummary)
-                    LogUdpSummary(socket.first, summary, "udp.summary");
+                    LogUdpSummary(flow.socket, summary, "udp.summary");
                 if (pending)
-                    QueueUdpAssociation(socket.first);
+                    QueueUdpAssociation(flow.socket);
             }
         }
         LOG_TRACE("reconnect worker exiting");

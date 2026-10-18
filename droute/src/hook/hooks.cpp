@@ -21,34 +21,21 @@ namespace droute {
         decltype(&send) Real_send = send;
         decltype(&recv) Real_recv = recv;
 
-        int(WSAAPI* Real_connect)(SOCKET s, const sockaddr* name, int namelen) = connect;
-        int(WSAAPI* Real_bind)(SOCKET s, const sockaddr* addr, int namelen) = bind;
-        int(WSAAPI* Real_closesocket)(SOCKET s) = closesocket;
-        int(WSAAPI* Real_sendto)(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen) = sendto;
-        int(WSAAPI* Real_recvfrom)(SOCKET s, char* buf, int len, int flags, sockaddr* from, int* fromlen) = recvfrom;
-        int(WSAAPI* Real_WSASendTo)(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent,
-                                    DWORD dwFlags, const sockaddr* lpTo, int iTolen, LPWSAOVERLAPPED lpOverlapped,
-                                    LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) = WSASendTo;
-        int(WSAAPI* Real_WSARecvFrom)(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd,
-                                      LPDWORD lpFlags, sockaddr* lpFrom, LPINT lpFromlen, LPWSAOVERLAPPED lpOverlapped,
-                                      LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) = WSARecvFrom;
-        BOOL(WSAAPI* Real_WSAGetOverlappedResult)(SOCKET s, LPWSAOVERLAPPED lpOverlapped, LPDWORD lpcbTransfer,
-                                                  BOOL fWait, LPDWORD lpdwFlags) = WSAGetOverlappedResult;
-        int(WSAAPI* Real_WSAEventSelect)(SOCKET s, WSAEVENT hEventObject, long lNetworkEvents) = WSAEventSelect;
-        int(WSAAPI* Real_WSAAsyncSelect)(SOCKET s, HWND hWnd, unsigned int wMsg, long lEvent) = WSAAsyncSelect;
-        int(WSAAPI* Real_ioctlsocket)(SOCKET s, long cmd, u_long* argp) = ioctlsocket;
-        BOOL(WINAPI* Real_GetQueuedCompletionStatus)(HANDLE CompletionPort, LPDWORD lpNumberOfBytesTransferred,
-                                                     PULONG_PTR lpCompletionKey, LPOVERLAPPED* lpOverlapped,
-                                                     DWORD dwMilliseconds) = GetQueuedCompletionStatus;
-        BOOL(WINAPI* Real_GetQueuedCompletionStatusEx)(HANDLE CompletionPort,
-                                                       LPOVERLAPPED_ENTRY lpCompletionPortEntries, ULONG ulCount,
-                                                       PULONG ulNumEntriesRemoved, DWORD dwMilliseconds,
-                                                       BOOL fAlertable) = GetQueuedCompletionStatusEx;
-        BOOL(WINAPI* Real_GetOverlappedResult)(HANDLE hFile, LPOVERLAPPED lpOverlapped,
-                                               LPDWORD lpNumberOfBytesTransferred, BOOL bWait) = GetOverlappedResult;
-        BOOL(WINAPI* Real_GetOverlappedResultEx)(HANDLE hFile, LPOVERLAPPED lpOverlapped,
-                                                 LPDWORD lpNumberOfBytesTransferred, DWORD dwMilliseconds,
-                                                 BOOL bAlertable) = GetOverlappedResultEx;
+        decltype(&connect) Real_connect = connect;
+        decltype(&bind) Real_bind = bind;
+        decltype(&closesocket) Real_closesocket = closesocket;
+        decltype(&sendto) Real_sendto = sendto;
+        decltype(&recvfrom) Real_recvfrom = recvfrom;
+        decltype(&WSASendTo) Real_WSASendTo = WSASendTo;
+        decltype(&WSARecvFrom) Real_WSARecvFrom = WSARecvFrom;
+        decltype(&WSAGetOverlappedResult) Real_WSAGetOverlappedResult = WSAGetOverlappedResult;
+        decltype(&WSAEventSelect) Real_WSAEventSelect = WSAEventSelect;
+        decltype(&WSAAsyncSelect) Real_WSAAsyncSelect = WSAAsyncSelect;
+        decltype(&ioctlsocket) Real_ioctlsocket = ioctlsocket;
+        decltype(&GetQueuedCompletionStatus) Real_GetQueuedCompletionStatus = GetQueuedCompletionStatus;
+        decltype(&GetQueuedCompletionStatusEx) Real_GetQueuedCompletionStatusEx = GetQueuedCompletionStatusEx;
+        decltype(&GetOverlappedResult) Real_GetOverlappedResult = GetOverlappedResult;
+        decltype(&GetOverlappedResultEx) Real_GetOverlappedResultEx = GetOverlappedResultEx;
 
         bool Install() {
             MH_STATUS status = MH_Initialize();
@@ -131,6 +118,7 @@ namespace droute {
 
             LOG_INFO("hooks installed");
             installation.committed = true;
+
             return true;
         }
 

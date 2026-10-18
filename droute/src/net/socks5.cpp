@@ -6,6 +6,12 @@
 namespace droute {
     namespace Socks5 {
 
+        struct Reply {
+            uint8_t status;
+            uint8_t addressType;
+            sockaddr_in boundAddr;
+        };
+
         static int ReplyToSocketError(uint8_t reply) {
             switch (reply) {
             case 0x01:
@@ -50,7 +56,7 @@ namespace droute {
             return true;
         }
 
-        bool ReadReply(SOCKET s, Reply& out, uint64_t deadline) {
+        static bool ReadReply(SOCKET s, Reply& out, uint64_t deadline) {
             uint8_t header[4];
             if (!RecvAll(s, header, 4, deadline)) {
                 LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to read reply header wsa_error=%d",
@@ -70,12 +76,12 @@ namespace droute {
                 return false;
             }
 
-            out.rep = header[1];
-            out.atyp = header[3];
-            LOG_DEBUG("event=socks5.reply socket=%llu reply=0x%02X atyp=0x%02X", (ULONG_PTR)s, out.rep, out.atyp);
+            out.status = header[1];
+            out.addressType = header[3];
+            LOG_DEBUG("event=socks5.reply socket=%llu reply=0x%02X atyp=0x%02X", (ULONG_PTR)s, out.status, out.addressType);
 
             size_t addrLen = 0;
-            switch (out.atyp) {
+            switch (out.addressType) {
             case 0x01:
                 addrLen = 4 + 2;
                 break;
@@ -95,7 +101,7 @@ namespace droute {
                 break;
             default:
                 LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: unsupported ATYP 0x%02X", (ULONG_PTR)s,
-                          out.atyp);
+                          out.addressType);
                 WSASetLastError(WSAEAFNOSUPPORT);
                 return false;
             }
@@ -110,10 +116,10 @@ namespace droute {
             out.boundAddr = {};
             out.boundAddr.sin_family = AF_INET;
 
-            if (out.atyp == 0x01) {
+            if (out.addressType == 0x01) {
                 memcpy(&out.boundAddr.sin_addr.s_addr, addrBuf.data(), 4);
                 memcpy(&out.boundAddr.sin_port, addrBuf.data() + 4, 2);
-            } else if (out.atyp == 0x03) {
+            } else if (out.addressType == 0x03) {
                 size_t domainLen = addrLen - 2;
                 if (!ResolveReplyDomain(addrBuf.data(), domainLen, out.boundAddr.sin_addr)) {
                     LOG_ERROR(
@@ -143,7 +149,10 @@ namespace droute {
             LOG_DEBUG("event=socks5.greeting.start socket=%llu auth_configured=%s remaining_ms=%d", (ULONG_PTR)s,
                       hasAuth ? "yes" : "no", RemainingTimeout(deadline));
 
-            uint8_t req[4] = {0x05, hasAuth ? uint8_t(0x02) : uint8_t(0x01), 0x00, uint8_t(0x02)};
+            // version, method count, no authentication, username/password
+            uint8_t req[4] = {0x05, 0x01, 0x00, 0x02};
+            if (hasAuth)
+                req[1] = 0x02;
             int reqLen = hasAuth ? 4 : 3;
 
             if (!SendAll(s, req, reqLen, deadline)) {
@@ -210,8 +219,7 @@ namespace droute {
                     WSASetLastError(WSAEACCES);
                     return false;
                 }
-            } else if (resp[1] == 0x00) {
-            } else {
+            } else if (resp[1] != 0x00) {
                 LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: unsupported method 0x%02X", (ULONG_PTR)s,
                           resp[1]);
                 WSASetLastError(WSAEACCES);
@@ -239,10 +247,10 @@ namespace droute {
             if (!ReadReply(s, reply, deadline)) {
                 return false;
             }
-            if (reply.rep != 0x00) {
+            if (reply.status != 0x00) {
                 LOG_ERROR("event=socks5.error socket=%llu socks5 connect rejected: rep=0x%02X", (ULONG_PTR)s,
-                          reply.rep);
-                WSASetLastError(ReplyToSocketError(reply.rep));
+                          reply.status);
+                WSASetLastError(ReplyToSocketError(reply.status));
                 return false;
             }
 
@@ -263,10 +271,10 @@ namespace droute {
             if (!ReadReply(ctrl, reply, deadline)) {
                 return false;
             }
-            if (reply.rep != 0x00) {
+            if (reply.status != 0x00) {
                 LOG_ERROR("event=socks5.error socket=%llu socks5 udp associate rejected: rep=0x%02X", (ULONG_PTR)ctrl,
-                          reply.rep);
-                WSASetLastError(ReplyToSocketError(reply.rep));
+                          reply.status);
+                WSASetLastError(ReplyToSocketError(reply.status));
                 return false;
             }
 
@@ -311,7 +319,7 @@ namespace droute {
             if (p[2] != 0x00)
                 return false;
 
-            memset(&outSrc, 0, sizeof(outSrc));
+            outSrc = {};
             outSrc.sin_family = AF_INET;
 
             int headerSize = 0;
