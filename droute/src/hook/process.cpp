@@ -62,20 +62,26 @@ BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
     }
 
     if (!exePath.empty()) {
-        if (exePath.find(L'\\') == std::wstring::npos && exePath.find(L'/') == std::wstring::npos) {
+        if (exePath.find_first_of(L"\\/") == std::wstring::npos) {
             std::wstring dir;
             if (lpCurrentDirectory && lpCurrentDirectory[0]) {
                 dir = lpCurrentDirectory;
             } else {
-                wchar_t cwd[MAX_PATH];
-                if (GetCurrentDirectoryW(MAX_PATH, cwd))
-                    dir = cwd;
+                const DWORD capacity = GetCurrentDirectoryW(0, nullptr);
+                if (capacity) {
+                    dir.resize(capacity);
+                    const DWORD length = GetCurrentDirectoryW(capacity, &dir[0]);
+                    if (length > 0 && length < capacity)
+                        dir.resize(length);
+                    else
+                        dir.clear();
+                }
             }
             if (!dir.empty())
                 exePath = dir + L"\\" + exePath;
         }
 
-        size_t sep = exePath.rfind(L'\\');
+        size_t sep = exePath.find_last_of(L"\\/");
         if (sep != std::wstring::npos) {
             std::wstring fileName = exePath.substr(sep + 1);
             std::wstring targetDir = exePath.substr(0, sep);
