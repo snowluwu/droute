@@ -1,6 +1,6 @@
-﻿namespace Droute.Installer.Forms
+namespace Droute.Installer.Forms
 {
-    partial class FrmMain
+    partial class MainForm
     {
         /// <summary>
         /// Required designer variable.
@@ -28,7 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FrmMain));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             this.tabControl = new System.Windows.Forms.TabControl();
             this.tabPage1 = new System.Windows.Forms.TabPage();
             this.openLogsButton = new System.Windows.Forms.Button();
@@ -348,15 +348,15 @@
             this.label5.ForeColor = System.Drawing.Color.Black;
             this.label5.Name = "label5";
             // 
-            // FrmMain
+            // MainForm
             // 
             resources.ApplyResources(this, "$this");
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.Controls.Add(this.tabControl);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
-            this.Name = "FrmMain";
-            this.Load += new System.EventHandler(this.FrmMain_Load);
+            this.Name = "MainForm";
+            this.Load += new System.EventHandler(this.MainForm_Load);
             this.tabControl.ResumeLayout(false);
             this.tabPage1.ResumeLayout(false);
             this.groupBox2.ResumeLayout(false);

@@ -1,6 +1,6 @@
-﻿namespace Droute.Installer.Forms
+namespace Droute.Installer.Forms
 {
-    partial class FrmPatch
+    partial class PatchForm
     {
         /// <summary>
         /// Required designer variable.
@@ -28,7 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FrmPatch));
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(PatchForm));
             this.progressBar = new System.Windows.Forms.ProgressBar();
             this.journalRichBox = new System.Windows.Forms.RichTextBox();
             this.SuspendLayout();
@@ -58,7 +58,7 @@
             this.journalRichBox.TabIndex = 3;
             this.journalRichBox.Text = "";
             // 
-            // FrmPatch
+            // PatchForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 14F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
@@ -69,11 +69,11 @@
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             this.MaximizeBox = false;
-            this.Name = "FrmPatch";
+            this.Name = "PatchForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
             this.Text = "Droute: Applying Patch";
-            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.FrmPatch_FormClosing);
-            this.Shown += new System.EventHandler(this.FrmPatch_Shown);
+            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.PatchForm_FormClosing);
+            this.Shown += new System.EventHandler(this.PatchForm_Shown);
             this.ResumeLayout(false);
 
         }

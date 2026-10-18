@@ -1,4 +1,4 @@
-﻿using CommandLine;
+using CommandLine;
 using Droute.Core;
 using Droute.Installer.Classes;
 using Droute.Installer.Forms;
@@ -24,32 +24,31 @@ namespace Droute.Installer
         {
             mtx = new Mutex(true, "snowluwu.droute", out createdNew);
 
-            // droute is already running
             if (!createdNew)
                 return;
 
             if (args.Length > 0)
             {
-                if (AttachConsole(-1)) // ATTACH_PARENT_PROCESS
+                if (AttachConsole(-1))
                 {
                     Console.Out.Flush();
                 }
 
-                #region [ ASCII ART ]
+                #region [ banner ]
 
                 Console.ForegroundColor = ConsoleColor.Blue;
                 Console.WriteLine(@"
     ____  ____  ____  __  ______________
    / __ \/ __ \/ __ \/ / / /_  __/ ____/
-  / / / / /_/ / / / / / / / / / / __/   
- / /_/ / _, _/ /_/ / /_/ / / / / /___   
+  / / / / /_/ / / / / / / / / / / __/
+ / /_/ / _, _/ /_/ / /_/ / / / / /___
 /_____/_/ |_|\____/\____/ /_/ /_____/
 
 ");
 
                 #endregion
 
-                #region [ About Droute ]
+                #region [ version ]
 
                 var versionInfo = new Version(Application.ProductVersion);
                 Console.ForegroundColor = ConsoleColor.DarkYellow;
@@ -61,21 +60,20 @@ namespace Droute.Installer
 
                 #endregion
 
-                Parser.Default.ParseArguments<ArgumentOptions>(NormalizeCliArguments(args))
+                Parser.Default.ParseArguments<CliOptions>(NormalizeCliArguments(args))
                     .WithParsed(CliActions)
                     .WithNotParsed(OnCliError);
 
                 Console.ResetColor();
-                SendKeys.SendWait("{ENTER}");
                 return;
             }
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new FrmMain());
+            Application.Run(new MainForm());
         }
 
-        private static void CliActions(ArgumentOptions opts)
+        private static void CliActions(CliOptions opts)
         {
             if (opts.Install && opts.Uninstall)
             {
@@ -84,46 +82,43 @@ namespace Droute.Installer
                 return;
             }
 
-            if (!Enum.TryParse(opts.Branch, true, out DiscordManager.Branches branch) ||
-                !Enum.IsDefined(typeof(DiscordManager.Branches), branch))
+            if (!Enum.TryParse(opts.Branch, true, out DiscordBranch branch) ||
+                !Enum.IsDefined(typeof(DiscordBranch), branch))
             {
                 CliLogger.WriteError("Invalid branch. Expected `stable`, `canary` or `ptb`.");
                 Environment.ExitCode = 2;
                 return;
             }
 
-            using (var logger = new CliLogger())
+            try
             {
-                try
+                bool configChanged = SaveOptionalSettings(opts);
+
+                if (!opts.Install && !opts.Uninstall)
                 {
-                    bool configChanged = ApplyOptionalConfig(opts);
-
-                    if (!opts.Install && !opts.Uninstall)
+                    if (!configChanged)
                     {
-                        if (!configChanged)
-                        {
-                            CliLogger.WriteError("No action or proxy settings were specified.");
-                            Environment.ExitCode = 2;
-                        }
-                        else
-                        {
-                            Environment.ExitCode = 0;
-                        }
-
-                        return;
+                        CliLogger.WriteError("No action or proxy settings were specified.");
+                        Environment.ExitCode = 2;
+                    }
+                    else
+                    {
+                        Environment.ExitCode = 0;
                     }
 
-                    bool success = opts.Install
-                        ? PatchTools.Install(branch)
-                        : PatchTools.Remove(branch);
+                    return;
+                }
 
-                    Environment.ExitCode = success ? 0 : 1;
-                }
-                catch (Exception ex)
-                {
-                    CliLogger.WriteError(ex.Message);
-                    Environment.ExitCode = 1;
-                }
+                bool success = opts.Install
+                    ? PatchActions.Install(branch, CliLogger.Write)
+                    : PatchActions.Uninstall(branch, CliLogger.Write);
+
+                Environment.ExitCode = success ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                CliLogger.WriteError(ex.Message);
+                Environment.ExitCode = 1;
             }
         }
 
@@ -152,10 +147,13 @@ namespace Droute.Installer
             return normalized;
         }
 
-        private static bool ApplyOptionalConfig(ArgumentOptions opts)
+        private static bool SaveOptionalSettings(CliOptions opts)
         {
+            if (opts.Host == null && !opts.Port.HasValue && opts.User == null && opts.Password == null)
+                return false;
+
             bool changed = false;
-            var config = new Config();
+            var config = new ProxySettings();
 
             if (opts.Host != null)
             {
@@ -184,7 +182,7 @@ namespace Droute.Installer
             if (!changed)
                 return false;
 
-            config.Apply();
+            config.Save();
 
             CliLogger.WriteOk("Proxy configuration updated.");
             return true;

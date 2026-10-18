@@ -1,8 +1,8 @@
-﻿using CommandLine;
+using CommandLine;
 
 namespace Droute.Installer.Classes
 {
-    internal class ArgumentOptions
+    internal class CliOptions
     {
         [Option('i', "install", Required = false, HelpText = "Install Droute patch.")]
         public bool Install { get; set; }
