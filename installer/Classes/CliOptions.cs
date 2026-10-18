@@ -4,13 +4,13 @@ namespace Droute.Installer.Classes
 {
     internal class CliOptions
     {
-        [Option('i', "install", Required = false, HelpText = "Install Droute patch.")]
+        [Option('i', "install", Required = false, HelpText = "Install Droute.")]
         public bool Install { get; set; }
 
-        [Option('u', "uninstall", Required = false, HelpText = "Remove Droute patch.")]
+        [Option('u', "uninstall", Required = false, HelpText = "Remove Droute.")]
         public bool Uninstall { get; set; }
 
-        [Option("branch", Required = false, Default = "stable", HelpText = "Discord branch: `stable`, `canary`, `ptb`. Default: stable.")]
+        [Option("branch", Required = false, Default = "stable", HelpText = "Discord branch: `stable`, `canary`, `ptb`.")]
         public string Branch { get; set; } = "stable";
 
         [Option("host", Required = false, HelpText = "Proxy address.")]
