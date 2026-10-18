@@ -9,16 +9,23 @@
 
 namespace droute {
 
-    enum class UdpIoKind { Send, Receive };
+    enum class UdpIoKind {
+        Send,
+        Receive
+    };
 
-    static std::atomic<uint64_t> g_nextUdpFlow{ 1 };
+    static std::atomic<uint64_t> g_nextUdpFlow{1};
 
     static const char* UdpStatusName(UdpAssociation::Status status) {
         switch (status) {
-        case UdpAssociation::Status::Idle: return "idle";
-        case UdpAssociation::Status::Associating: return "associating";
-        case UdpAssociation::Status::PendingAssociate: return "pending";
-        case UdpAssociation::Status::Associated: return "associated";
+        case UdpAssociation::Status::Idle:
+            return "idle";
+        case UdpAssociation::Status::Associating:
+            return "associating";
+        case UdpAssociation::Status::PendingAssociate:
+            return "pending";
+        case UdpAssociation::Status::Associated:
+            return "associated";
         }
         return "unknown";
     }
@@ -28,8 +35,8 @@ namespace droute {
         ++a.attempts;
         a.attemptStartedAt = GetTickCount64();
         const LogLevel level = a.attempts == 1 || a.lastAssociationError == 0 ? LogLevel::Info : LogLevel::Debug;
-        DROUTE_LOG(level, "event=udp.associate.start flow=%llu socket=%llu attempt=%llu trigger=%s proxy=%s",
-            a.flowId, (ULONG_PTR)s, a.attempts, trigger, AddrToString(g_proxyAddr).c_str());
+        DROUTE_LOG(level, "event=udp.associate.start flow=%llu socket=%llu attempt=%llu trigger=%s proxy=%s", a.flowId,
+                   (ULONG_PTR)s, a.attempts, trigger, AddrToString(g_proxyAddr).c_str());
     }
 
     void LogUdpAssociationResult(SOCKET s, UdpAssociation& a, bool ok, int error, const char* stage) {
@@ -37,14 +44,19 @@ namespace droute {
         const uint64_t elapsed = GetTickCount64() - a.attemptStartedAt;
         if (ok) {
             ++a.generation;
-            LOG_INFO("event=udp.associate.ready flow=%llu socket=%llu attempt=%llu generation=%llu control=%llu relay=%s elapsed_ms=%llu",
-                a.flowId, (ULONG_PTR)s, a.attempts, a.generation, (ULONG_PTR)a.ctrlSocket,
-                AddrToString(a.relayAddr).c_str(), elapsed);
+            LOG_INFO("event=udp.associate.ready flow=%llu socket=%llu attempt=%llu generation=%llu control=%llu "
+                     "relay=%s elapsed_ms=%llu",
+                     a.flowId, (ULONG_PTR)s, a.attempts, a.generation, (ULONG_PTR)a.ctrlSocket,
+                     AddrToString(a.relayAddr).c_str(), elapsed);
         } else {
-            const LogLevel level = a.attempts == 1 || error != a.lastAssociationError || strcmp(stage, a.associationStage) != 0
-                ? LogLevel::Warn : LogLevel::Debug;
-            DROUTE_LOG(level, "event=udp.associate.failed flow=%llu socket=%llu attempt=%llu stage=%s wsa_error=%d elapsed_ms=%llu next_retry_ms=%u",
-                a.flowId, (ULONG_PTR)s, a.attempts, stage, error, elapsed, g_cfg.reconnectInterval);
+            const LogLevel level =
+                a.attempts == 1 || error != a.lastAssociationError || strcmp(stage, a.associationStage) != 0
+                    ? LogLevel::Warn
+                    : LogLevel::Debug;
+            DROUTE_LOG(level,
+                       "event=udp.associate.failed flow=%llu socket=%llu attempt=%llu stage=%s wsa_error=%d "
+                       "elapsed_ms=%llu next_retry_ms=%u",
+                       a.flowId, (ULONG_PTR)s, a.attempts, stage, error, elapsed, g_cfg.reconnectInterval);
         }
         a.lastAssociationError = error;
         a.associationStage = stage;
@@ -53,14 +65,18 @@ namespace droute {
     void LogUdpSummary(SOCKET s, UdpAssociation& a, const char* event) {
         Logger::ErrorScope preserveError;
         const uint64_t now = GetTickCount64();
-        LOG_INFO("event=%s flow=%llu socket=%llu state=%s generation=%llu attempts=%llu control=%llu relay=%s destination=%s lifetime_ms=%llu interval_ms=%llu tx_packets=%llu rx_packets=%llu tx_bytes=%llu rx_bytes=%llu interval_tx=%llu interval_rx=%llu tx_age_ms=%lld rx_age_ms=%lld pending_io=%llu io_errors=%llu would_block=%llu blocked_sends=%llu last_io_error=%d last_associate_error=%d associate_stage=%s",
-            event, a.flowId, (ULONG_PTR)s, UdpStatusName(a.status), a.generation, a.attempts,
-            (ULONG_PTR)a.ctrlSocket, AddrToString(a.relayAddr).c_str(), AddrToString(a.destination).c_str(),
-            now - a.createdAt, now - a.lastSummaryAt, a.txPackets, a.rxPackets, a.txBytes, a.rxBytes,
-            a.txPackets - a.reportedTx, a.rxPackets - a.reportedRx,
-            a.lastTxAt ? static_cast<int64_t>(now - a.lastTxAt) : -1LL,
-            a.lastRxAt ? static_cast<int64_t>(now - a.lastRxAt) : -1LL,
-            a.pendingIo, a.ioErrors, a.wouldBlock, a.blockedSends, a.lastIoError, a.lastAssociationError, a.associationStage);
+        LOG_INFO("event=%s flow=%llu socket=%llu state=%s generation=%llu attempts=%llu control=%llu relay=%s "
+                 "destination=%s lifetime_ms=%llu interval_ms=%llu tx_packets=%llu rx_packets=%llu tx_bytes=%llu "
+                 "rx_bytes=%llu interval_tx=%llu interval_rx=%llu tx_age_ms=%lld rx_age_ms=%lld pending_io=%llu "
+                 "io_errors=%llu would_block=%llu blocked_sends=%llu last_io_error=%d last_associate_error=%d "
+                 "associate_stage=%s",
+                 event, a.flowId, (ULONG_PTR)s, UdpStatusName(a.status), a.generation, a.attempts,
+                 (ULONG_PTR)a.ctrlSocket, AddrToString(a.relayAddr).c_str(), AddrToString(a.destination).c_str(),
+                 now - a.createdAt, now - a.lastSummaryAt, a.txPackets, a.rxPackets, a.txBytes, a.rxBytes,
+                 a.txPackets - a.reportedTx, a.rxPackets - a.reportedRx,
+                 a.lastTxAt ? static_cast<int64_t>(now - a.lastTxAt) : -1LL,
+                 a.lastRxAt ? static_cast<int64_t>(now - a.lastRxAt) : -1LL, a.pendingIo, a.ioErrors, a.wouldBlock,
+                 a.blockedSends, a.lastIoError, a.lastAssociationError, a.associationStage);
         a.reportedTx = a.txPackets;
         a.reportedRx = a.rxPackets;
         a.lastSummaryAt = now;
@@ -82,39 +98,44 @@ namespace droute {
         observation.startedAt = GetTickCount64();
         std::unique_lock<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(s);
-        if (it == g_udpMap.end()) return;
+        if (it == g_udpMap.end())
+            return;
         auto& a = it->second;
         observation.flowId = a.flowId;
         observation.generation = a.generation;
         if (destination && !IsSameAddr(*destination, a.destination)) {
             a.destination = *destination;
-            LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s",
-                a.flowId, (ULONG_PTR)s, AddrToString(*destination).c_str(), api);
+            LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", a.flowId, (ULONG_PTR)s,
+                     AddrToString(*destination).c_str(), api);
         }
     }
 
-    static void RecordUdpIo(SOCKET s, const UdpIoObservation& observation, UdpIoKind kind,
-                            DWORD bytes, int error, const sockaddr_in* source = nullptr) {
+    static void RecordUdpIo(SOCKET s, const UdpIoObservation& observation, UdpIoKind kind, DWORD bytes, int error,
+                            const sockaddr_in* source = nullptr) {
         Logger::ErrorScope preserveError;
         const uint64_t now = GetTickCount64();
         const char* direction = kind == UdpIoKind::Send ? "send" : "receive";
         std::unique_lock<std::shared_mutex> lock(g_stateMutex);
         auto it = g_udpMap.find(s);
         if (it == g_udpMap.end() || it->second.flowId != observation.flowId) {
-            LOG_DEBUG("event=udp.io.late_completion flow=%llu socket=%llu generation=%llu direction=%s api=%s bytes=%lu error=%d",
-                observation.flowId, (ULONG_PTR)s, observation.generation, direction, observation.api, bytes, error);
+            LOG_DEBUG("event=udp.io.late_completion flow=%llu socket=%llu generation=%llu direction=%s api=%s "
+                      "bytes=%lu error=%d",
+                      observation.flowId, (ULONG_PTR)s, observation.generation, direction, observation.api, bytes,
+                      error);
             return;
         }
         auto& a = it->second;
-        if (observation.pending && a.pendingIo) --a.pendingIo;
+        if (observation.pending && a.pendingIo)
+            --a.pendingIo;
         if (error == WSAEWOULDBLOCK) {
             ++a.wouldBlock;
         } else if (error) {
             ++a.ioErrors;
             if (error != a.lastIoError || now - a.lastIoErrorLogAt >= 10000) {
-                LOG_WARN("event=udp.io.failed flow=%llu socket=%llu generation=%llu direction=%s api=%s stage=%s error=%d io_errors=%llu elapsed_ms=%llu",
-                    a.flowId, (ULONG_PTR)s, observation.generation, direction, observation.api, observation.stage,
-                    error, a.ioErrors, now - observation.startedAt);
+                LOG_WARN("event=udp.io.failed flow=%llu socket=%llu generation=%llu direction=%s api=%s stage=%s "
+                         "error=%d io_errors=%llu elapsed_ms=%llu",
+                         a.flowId, (ULONG_PTR)s, observation.generation, direction, observation.api, observation.stage,
+                         error, a.ioErrors, now - observation.startedAt);
                 a.lastIoErrorLogAt = now;
             }
             a.lastIoError = error;
@@ -128,14 +149,19 @@ namespace droute {
             lastAt = now;
             if (observation.generation == a.generation && firstGeneration != a.generation) {
                 firstGeneration = a.generation;
-                LOG_INFO("event=udp.io.first flow=%llu socket=%llu generation=%llu direction=%s api=%s bytes=%lu source=%s",
+                LOG_INFO(
+                    "event=udp.io.first flow=%llu socket=%llu generation=%llu direction=%s api=%s bytes=%lu source=%s",
                     a.flowId, (ULONG_PTR)s, a.generation, direction, observation.api, bytes,
                     source ? AddrToString(*source).c_str() : "none");
             }
         }
-        LOG_TRACE("event=udp.io.complete flow=%llu socket=%llu generation=%llu direction=%s api=%s completion_api=%s route=%s bytes=%lu error=%d elapsed_ms=%llu",
-            a.flowId, (ULONG_PTR)s, observation.generation, direction, observation.api, observation.completionApi,
-            observation.proxied ? "proxy" : error ? "unknown" : "direct", bytes, error, now - observation.startedAt);
+        LOG_TRACE("event=udp.io.complete flow=%llu socket=%llu generation=%llu direction=%s api=%s completion_api=%s "
+                  "route=%s bytes=%lu error=%d elapsed_ms=%llu",
+                  a.flowId, (ULONG_PTR)s, observation.generation, direction, observation.api, observation.completionApi,
+                  observation.proxied ? "proxy"
+                  : error             ? "unknown"
+                                      : "direct",
+                  bytes, error, now - observation.startedAt);
     }
 
     struct UdpIoOperation {
@@ -200,8 +226,7 @@ namespace droute {
         return true;
     }
 
-    static bool GatherApplicationBuffers(LPWSABUF buffers, DWORD count,
-                                         std::vector<uint8_t>& output, DWORD& size) {
+    static bool GatherApplicationBuffers(LPWSABUF buffers, DWORD count, std::vector<uint8_t>& output, DWORD& size) {
         if (!GetApplicationBufferSize(buffers, count, size))
             return false;
 
@@ -216,8 +241,7 @@ namespace droute {
         return true;
     }
 
-    static void ScatterApplicationBuffers(const void* data, DWORD length,
-                                          const std::vector<WSABUF>& buffers) {
+    static void ScatterApplicationBuffers(const void* data, DWORD length, const std::vector<WSABUF>& buffers) {
         const uint8_t* source = static_cast<const uint8_t*>(data);
         DWORD copied = 0;
         for (const WSABUF& buffer : buffers) {
@@ -255,39 +279,41 @@ namespace droute {
         return IsSameAddr(source, g_proxyAddr);
     }
 
-    static UdpCompletion CompleteUdpIo(const std::shared_ptr<UdpIoOperation>& operation,
-                                       int operationError, DWORD transferred, const char* completionApi = "inline") {
+    static UdpCompletion CompleteUdpIo(const std::shared_ptr<UdpIoOperation>& operation, int operationError,
+                                       DWORD transferred, const char* completionApi = "inline") {
         std::lock_guard<std::mutex> completionLock(operation->completionMutex);
         if (operation->processed)
-            return { operation->completedBytes, operation->completionError };
+            return {operation->completedBytes, operation->completionError};
 
         operation->processed = true;
         operation->observation.completionApi = completionApi;
         operation->completionError = operationError;
+
         struct CompletionObservation {
             UdpIoOperation& operation;
+
             ~CompletionObservation() {
-                RecordUdpIo(operation.socket, operation.observation, operation.kind,
-                    operation.completedBytes, operation.completionError,
-                    operation.kind == UdpIoKind::Receive ? &operation.completedSource : nullptr);
+                RecordUdpIo(operation.socket, operation.observation, operation.kind, operation.completedBytes,
+                            operation.completionError,
+                            operation.kind == UdpIoKind::Receive ? &operation.completedSource : nullptr);
             }
-        } observation{ *operation };
+        } observation{*operation};
+
         if (operationError != 0)
-            return { 0, operationError };
+            return {0, operationError};
 
         if (operation->kind == UdpIoKind::Send) {
             if (transferred >= operation->proxyHeaderSize) {
-                operation->completedBytes = (std::min)(
-                    operation->applicationBufferSize,
-                    transferred - operation->proxyHeaderSize);
+                operation->completedBytes =
+                    (std::min)(operation->applicationBufferSize, transferred - operation->proxyHeaderSize);
             }
-            return { operation->completedBytes, 0 };
+            return {operation->completedBytes, 0};
         }
 
         if (transferred > operation->buffer.size()) {
             operation->observation.stage = "receive_buffer_size";
             operation->completionError = WSAEMSGSIZE;
-            return { 0, operation->completionError };
+            return {0, operation->completionError};
         }
 
         const void* payload = operation->buffer.data();
@@ -298,20 +324,19 @@ namespace droute {
             source = *reinterpret_cast<const sockaddr_in*>(&operation->receivedFrom);
             if (IsUdpRelaySource(*operation, source)) {
                 operation->observation.proxied = true;
-                if (!Socks5UnwrapUdp(operation->buffer.data(), static_cast<int>(transferred),
-                                     source, payload, payloadLength)) {
+                if (!Socks5UnwrapUdp(operation->buffer.data(), static_cast<int>(transferred), source, payload,
+                                     payloadLength)) {
                     LOG_DEBUG("event=udp.unwrap.failed flow=%llu socket=%llu generation=%llu relay=%s wire_bytes=%lu",
-                        operation->observation.flowId, (ULONG_PTR)operation->socket,
-                        operation->observation.generation, AddrToString(source).c_str(), transferred);
-                    LOG_DEBUG("event=udp.unwrap.header flow=%llu reserved_hi=%u reserved_lo=%u fragment=%u atyp=%u header_present=%s",
-                        operation->observation.flowId,
-                        transferred > 0 ? operation->buffer[0] : 0,
-                        transferred > 1 ? operation->buffer[1] : 0,
-                        transferred > 2 ? operation->buffer[2] : 0,
-                        transferred > 3 ? operation->buffer[3] : 0, transferred >= 4 ? "yes" : "no");
+                              operation->observation.flowId, (ULONG_PTR)operation->socket,
+                              operation->observation.generation, AddrToString(source).c_str(), transferred);
+                    LOG_DEBUG("event=udp.unwrap.header flow=%llu reserved_hi=%u reserved_lo=%u fragment=%u atyp=%u "
+                              "header_present=%s",
+                              operation->observation.flowId, transferred > 0 ? operation->buffer[0] : 0,
+                              transferred > 1 ? operation->buffer[1] : 0, transferred > 2 ? operation->buffer[2] : 0,
+                              transferred > 3 ? operation->buffer[3] : 0, transferred >= 4 ? "yes" : "no");
                     operation->completionError = WSAECONNRESET;
                     operation->observation.stage = "unwrap";
-                    return { 0, operation->completionError };
+                    return {0, operation->completionError};
                 }
             }
         }
@@ -323,8 +348,8 @@ namespace droute {
         operation->completedBytes = copied;
 
         if (operation->applicationFrom && operation->applicationFromLength) {
-            const int copyLength = (std::min)(operation->applicationFromCapacity,
-                                            static_cast<int>(sizeof(sockaddr_in)));
+            const int copyLength =
+                (std::min)(operation->applicationFromCapacity, static_cast<int>(sizeof(sockaddr_in)));
             if (copyLength > 0)
                 memcpy(operation->applicationFrom, &source, copyLength);
             *operation->applicationFromLength = sizeof(sockaddr_in);
@@ -337,7 +362,7 @@ namespace droute {
             operation->observation.stage = "application_buffer_size";
         }
 
-        return { operation->completedBytes, operation->completionError };
+        return {operation->completedBytes, operation->completionError};
     }
 
     static bool RegisterUdpIo(const std::shared_ptr<UdpIoOperation>& operation) {
@@ -346,9 +371,10 @@ namespace droute {
         if (existing != g_udpIoOperations.end()) {
             std::lock_guard<std::mutex> completionLock(existing->second->completionMutex);
             if (!existing->second->processed) {
-                LOG_WARN("event=udp.io.overlapped_reused flow=%llu socket=%llu overlapped=%p previous_flow=%llu previous_socket=%llu",
-                    operation->observation.flowId, (ULONG_PTR)operation->socket, operation->overlapped,
-                    existing->second->observation.flowId, (ULONG_PTR)existing->second->socket);
+                LOG_WARN("event=udp.io.overlapped_reused flow=%llu socket=%llu overlapped=%p previous_flow=%llu "
+                         "previous_socket=%llu",
+                         operation->observation.flowId, (ULONG_PTR)operation->socket, operation->overlapped,
+                         existing->second->observation.flowId, (ULONG_PTR)existing->second->socket);
                 WSASetLastError(WSAEINVAL);
                 return false;
             }
@@ -364,9 +390,9 @@ namespace droute {
             }
         }
         LOG_TRACE("event=udp.io.register flow=%llu socket=%llu generation=%llu api=%s overlapped=%p notification=%s",
-            operation->observation.flowId, (ULONG_PTR)operation->socket, operation->observation.generation,
-            operation->observation.api, operation->overlapped,
-            operation->completionRoutine ? "callback" : "event_or_iocp");
+                  operation->observation.flowId, (ULONG_PTR)operation->socket, operation->observation.generation,
+                  operation->observation.api, operation->overlapped,
+                  operation->completionRoutine ? "callback" : "event_or_iocp");
         return true;
     }
 
@@ -384,16 +410,15 @@ namespace droute {
         return operation;
     }
 
-    static void CALLBACK UdpIoCompletionRoutine(DWORD error, DWORD transferred,
-                                                LPWSAOVERLAPPED overlapped, DWORD flags) {
+    static void CALLBACK UdpIoCompletionRoutine(DWORD error, DWORD transferred, LPWSAOVERLAPPED overlapped,
+                                                DWORD flags) {
         auto operation = TakeUdpIo(overlapped);
         if (!operation)
             return;
 
         UdpCompletion completion = CompleteUdpIo(operation, static_cast<int>(error), transferred, "callback");
         if (operation->completionRoutine) {
-            operation->completionRoutine(static_cast<DWORD>(completion.error), completion.bytes,
-                                         overlapped, flags);
+            operation->completionRoutine(static_cast<DWORD>(completion.error), completion.bytes, overlapped, flags);
         }
     }
 
@@ -411,9 +436,9 @@ namespace droute {
         sockaddr_in local = {};
         int size = sizeof(local);
         const bool hasLocal = getsockname(s, reinterpret_cast<sockaddr*>(&local), &size) == 0;
-        LOG_INFO("event=udp.track flow=%llu socket=%llu local=%s mode=%s",
-            association.flowId, (ULONG_PTR)s, hasLocal ? AddrToString(local).c_str() : "unknown",
-            g_nonBlockingSockets.count(s) ? "nonblocking" : "blocking");
+        LOG_INFO("event=udp.track flow=%llu socket=%llu local=%s mode=%s", association.flowId, (ULONG_PTR)s,
+                 hasLocal ? AddrToString(local).c_str() : "unknown",
+                 g_nonBlockingSockets.count(s) ? "nonblocking" : "blocking");
     }
 
     void MarkUdpAssociationPending(SOCKET s, SOCKET expectedControlSocket, const char* reason, int error) {
@@ -422,13 +447,13 @@ namespace droute {
         auto it = g_udpMap.find(s);
         if (it == g_udpMap.end())
             return;
-        if (expectedControlSocket != INVALID_SOCKET &&
-            it->second.ctrlSocket != expectedControlSocket)
+        if (expectedControlSocket != INVALID_SOCKET && it->second.ctrlSocket != expectedControlSocket)
             return;
 
-        LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu from=%s reason=%s error=%d control=%llu relay=%s",
-            it->second.flowId, (ULONG_PTR)s, it->second.generation, UdpStatusName(it->second.status),
-            reason, error, (ULONG_PTR)it->second.ctrlSocket, AddrToString(it->second.relayAddr).c_str());
+        LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu from=%s reason=%s error=%d "
+                 "control=%llu relay=%s",
+                 it->second.flowId, (ULONG_PTR)s, it->second.generation, UdpStatusName(it->second.status), reason,
+                 error, (ULONG_PTR)it->second.ctrlSocket, AddrToString(it->second.relayAddr).c_str());
         if (it->second.ctrlSocket != INVALID_SOCKET) {
             Hooks::Real_closesocket(it->second.ctrlSocket);
             it->second.ctrlSocket = INVALID_SOCKET;
@@ -472,10 +497,10 @@ namespace droute {
                     WSASetLastError(error);
                     return false;
                 }
-                int soErr = 0; int soLen = sizeof(soErr);
+                int soErr = 0;
+                int soLen = sizeof(soErr);
                 out.associationStage = "proxy_connect_result";
-                if (getsockopt(ctrl, SOL_SOCKET, SO_ERROR,
-                               reinterpret_cast<char*>(&soErr), &soLen) != 0) {
+                if (getsockopt(ctrl, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&soErr), &soLen) != 0) {
                     int error = WSAGetLastError();
                     Hooks::Real_closesocket(ctrl);
                     WSASetLastError(error);
@@ -493,7 +518,8 @@ namespace droute {
             }
         }
 
-        LOG_DEBUG("event=udp.control.connected control=%llu proxy=%s", (ULONG_PTR)ctrl, AddrToString(g_proxyAddr).c_str());
+        LOG_DEBUG("event=udp.control.connected control=%llu proxy=%s", (ULONG_PTR)ctrl,
+                  AddrToString(g_proxyAddr).c_str());
         out.associationStage = "socks_greeting_auth";
         if (!Socks5Handshake(ctrl, g_cfg.user.c_str(), g_cfg.password.c_str(), deadline)) {
             int error = WSAGetLastError();
@@ -519,8 +545,7 @@ namespace droute {
     }
 
     static bool ActivateUdpRelay(SOCKET s, std::unique_lock<std::shared_mutex>& lock,
-                                 std::map<SOCKET, UdpAssociation>::iterator& it,
-                                 uint64_t deadline) {
+                                 std::map<SOCKET, UdpAssociation>::iterator& it, uint64_t deadline) {
         if (it->second.status == UdpAssociation::Status::Associating)
             return false;
 
@@ -586,8 +611,8 @@ namespace droute {
 
         if (!IsSameAddr(destination, it->second.destination)) {
             it->second.destination = destination;
-            LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s",
-                it->second.flowId, (ULONG_PTR)s, AddrToString(destination).c_str(), api);
+            LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", it->second.flowId,
+                     (ULONG_PTR)s, AddrToString(destination).c_str(), api);
         }
 
         const uint64_t instanceId = it->second.instanceId;
@@ -597,8 +622,9 @@ namespace droute {
             if (current != g_udpMap.end() && current->second.instanceId == instanceId) {
                 auto& a = current->second;
                 ++a.blockedSends;
-                LOG_TRACE("event=udp.send.blocked flow=%llu socket=%llu state=%s api=%s application_error=%d blocked_sends=%llu",
-                    a.flowId, (ULONG_PTR)s, UdpStatusName(a.status), api, error, a.blockedSends);
+                LOG_TRACE("event=udp.send.blocked flow=%llu socket=%llu state=%s api=%s application_error=%d "
+                          "blocked_sends=%llu",
+                          a.flowId, (ULONG_PTR)s, UdpStatusName(a.status), api, error, a.blockedSends);
             }
             WSASetLastError(error);
             return false;
@@ -609,11 +635,11 @@ namespace droute {
         if (!it->second.suppressUdpConnReset) {
             BOOL reportReset = FALSE;
             DWORD returned = 0;
-            if (WSAIoctl(s, SIO_UDP_CONNRESET, &reportReset, sizeof(reportReset),
-                         nullptr, 0, &returned, nullptr, nullptr) == SOCKET_ERROR) {
+            if (WSAIoctl(s, SIO_UDP_CONNRESET, &reportReset, sizeof(reportReset), nullptr, 0, &returned, nullptr,
+                         nullptr) == SOCKET_ERROR) {
                 const int error = WSAGetLastError();
-                LOG_WARN("event=udp.connreset.suppress.failed flow=%llu socket=%llu wsa_error=%d",
-                         it->second.flowId, (ULONG_PTR)s, error);
+                LOG_WARN("event=udp.connreset.suppress.failed flow=%llu socket=%llu wsa_error=%d", it->second.flowId,
+                         (ULONG_PTR)s, error);
                 return fail(error);
             }
             it->second.suppressUdpConnReset = true;
@@ -623,13 +649,12 @@ namespace droute {
             // wait for association: a synthetic WSAEWOULDBLOCK has no readiness event.
             if (it->second.status == UdpAssociation::Status::Associating) {
                 const int remaining = RemainingTimeout(deadline);
-                if (remaining == 0 || !g_udpAssociationChanged.wait_for(
-                        lock, std::chrono::milliseconds(remaining), [&] {
-                            auto current = g_udpMap.find(s);
-                            return current == g_udpMap.end() ||
-                                current->second.instanceId != instanceId ||
-                                current->second.status != UdpAssociation::Status::Associating;
-                        })) {
+                if (remaining == 0 ||
+                    !g_udpAssociationChanged.wait_for(lock, std::chrono::milliseconds(remaining), [&] {
+                        auto current = g_udpMap.find(s);
+                        return current == g_udpMap.end() || current->second.instanceId != instanceId ||
+                               current->second.status != UdpAssociation::Status::Associating;
+                    })) {
                     return fail(WSAETIMEDOUT);
                 }
                 it = g_udpMap.find(s);
@@ -656,9 +681,10 @@ namespace droute {
             if (!IsSocketDisconnected(controlSocket, &error, &reason))
                 return true;
 
-            LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu trigger=send reason=%s wsa_error=%d control=%llu relay=%s",
-                it->second.flowId, (ULONG_PTR)s, it->second.generation, reason, error,
-                (ULONG_PTR)controlSocket, AddrToString(relayAddr).c_str());
+            LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu trigger=send reason=%s "
+                     "wsa_error=%d control=%llu relay=%s",
+                     it->second.flowId, (ULONG_PTR)s, it->second.generation, reason, error, (ULONG_PTR)controlSocket,
+                     AddrToString(relayAddr).c_str());
             Hooks::Real_closesocket(controlSocket);
             it->second.ctrlSocket = INVALID_SOCKET;
             it->second.relayAddr = {};
@@ -694,11 +720,12 @@ namespace droute {
         observation.proxied = true;
 
         auto packet = Socks5WrapUdp(*dst, buf, len);
-        int result = Hooks::Real_sendto(s, reinterpret_cast<const char*>(packet.data()), static_cast<int>(packet.size()),
-                                        flags, reinterpret_cast<const sockaddr*>(&relayAddr), sizeof(relayAddr));
+        int result =
+            Hooks::Real_sendto(s, reinterpret_cast<const char*>(packet.data()), static_cast<int>(packet.size()), flags,
+                               reinterpret_cast<const sockaddr*>(&relayAddr), sizeof(relayAddr));
         RecordUdpIo(s, observation, UdpIoKind::Send,
-            result == static_cast<int>(packet.size()) ? static_cast<DWORD>(len) : 0,
-            result == SOCKET_ERROR ? WSAGetLastError() : 0);
+                    result == static_cast<int>(packet.size()) ? static_cast<DWORD>(len) : 0,
+                    result == SOCKET_ERROR ? WSAGetLastError() : 0);
         if (result == SOCKET_ERROR) {
             int error = WSAGetLastError();
             if (error != WSAEWOULDBLOCK)
@@ -709,21 +736,21 @@ namespace droute {
     }
 
     int WSAAPI Mine_WSASendTo(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesSent,
-                              DWORD dwFlags, const sockaddr* lpTo, int iTolen,
-                              LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) {
+                              DWORD dwFlags, const sockaddr* lpTo, int iTolen, LPWSAOVERLAPPED lpOverlapped,
+                              LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) {
         if (!lpTo || iTolen < static_cast<int>(sizeof(sockaddr_in)) || dwBufferCount == 0 || !lpBuffers) {
-            return Hooks::Real_WSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags,
-                                         lpTo, iTolen, lpOverlapped, lpCompletionRoutine);
+            return Hooks::Real_WSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpTo, iTolen,
+                                         lpOverlapped, lpCompletionRoutine);
         }
         const sockaddr_in* dst = reinterpret_cast<const sockaddr_in*>(lpTo);
         if (dst->sin_family != AF_INET || IsDirectUdpDestination(*dst)) {
-            return Hooks::Real_WSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags,
-                                         lpTo, iTolen, lpOverlapped, lpCompletionRoutine);
+            return Hooks::Real_WSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpTo, iTolen,
+                                         lpOverlapped, lpCompletionRoutine);
         }
 
         if (!IsUdpSocket(s)) {
-            return Hooks::Real_WSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags,
-                                         lpTo, iTolen, lpOverlapped, lpCompletionRoutine);
+            return Hooks::Real_WSASendTo(s, lpBuffers, dwBufferCount, lpNumberOfBytesSent, dwFlags, lpTo, iTolen,
+                                         lpOverlapped, lpCompletionRoutine);
         }
         TrackUdpSocket(s);
 
@@ -760,21 +787,16 @@ namespace droute {
 
         DWORD localBytesSent = 0;
         LPDWORD bytesSent = lpNumberOfBytesSent ? lpNumberOfBytesSent : &localBytesSent;
-        WSABUF proxyBuffer = {
-            static_cast<ULONG>(operation->buffer.size()),
-            reinterpret_cast<char*>(operation->buffer.data())
-        };
-        int result = Hooks::Real_WSASendTo(s, &proxyBuffer, 1, bytesSent, dwFlags,
-                                           reinterpret_cast<const sockaddr*>(&relayAddr), sizeof(relayAddr),
-                                           lpOverlapped,
-                                           lpOverlapped && lpCompletionRoutine
-                                               ? UdpIoCompletionRoutine
-                                               : lpCompletionRoutine);
+        WSABUF proxyBuffer = {static_cast<ULONG>(operation->buffer.size()),
+                              reinterpret_cast<char*>(operation->buffer.data())};
+        int result = Hooks::Real_WSASendTo(
+            s, &proxyBuffer, 1, bytesSent, dwFlags, reinterpret_cast<const sockaddr*>(&relayAddr), sizeof(relayAddr),
+            lpOverlapped, lpOverlapped && lpCompletionRoutine ? UdpIoCompletionRoutine : lpCompletionRoutine);
         int error = result == 0 ? 0 : WSAGetLastError();
 
         if (result == 0) {
-            UdpCompletion completion = CompleteUdpIo(operation, 0,
-                *bytesSent != 0 ? *bytesSent : static_cast<DWORD>(operation->buffer.size()));
+            UdpCompletion completion = CompleteUdpIo(
+                operation, 0, *bytesSent != 0 ? *bytesSent : static_cast<DWORD>(operation->buffer.size()));
             if (lpNumberOfBytesSent)
                 *lpNumberOfBytesSent = completion.bytes;
         }
@@ -801,7 +823,7 @@ namespace droute {
         operation->kind = UdpIoKind::Receive;
         operation->socket = s;
         operation->applicationBufferSize = static_cast<DWORD>(len);
-        operation->applicationBuffers.push_back({ static_cast<ULONG>(len), buf });
+        operation->applicationBuffers.push_back({static_cast<ULONG>(len), buf});
         operation->applicationFrom = from;
         operation->applicationFromLength = fromlen;
         operation->applicationFromCapacity = from && fromlen ? *fromlen : 0;
@@ -810,8 +832,7 @@ namespace droute {
         CaptureUdpObservation(s, operation->observation, "recvfrom");
 
         int received = Hooks::Real_recvfrom(
-            s, reinterpret_cast<char*>(operation->buffer.data()),
-            static_cast<int>(operation->buffer.size()), flags,
+            s, reinterpret_cast<char*>(operation->buffer.data()), static_cast<int>(operation->buffer.size()), flags,
             reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength);
         if (received == SOCKET_ERROR) {
             CompleteUdpIo(operation, WSAGetLastError(), 0);
@@ -827,11 +848,11 @@ namespace droute {
     }
 
     int WSAAPI Mine_WSARecvFrom(SOCKET s, LPWSABUF lpBuffers, DWORD dwBufferCount, LPDWORD lpNumberOfBytesRecvd,
-                                LPDWORD lpFlags, sockaddr* lpFrom, LPINT lpFromlen,
-                                LPWSAOVERLAPPED lpOverlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) {
+                                LPDWORD lpFlags, sockaddr* lpFrom, LPINT lpFromlen, LPWSAOVERLAPPED lpOverlapped,
+                                LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine) {
         if (!IsTrackedUdpSocket(s)) {
-            return Hooks::Real_WSARecvFrom(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpFlags,
-                                           lpFrom, lpFromlen, lpOverlapped, lpCompletionRoutine);
+            return Hooks::Real_WSARecvFrom(s, lpBuffers, dwBufferCount, lpNumberOfBytesRecvd, lpFlags, lpFrom,
+                                           lpFromlen, lpOverlapped, lpCompletionRoutine);
         }
 
         DWORD applicationBufferSize = 0;
@@ -861,18 +882,14 @@ namespace droute {
         if (lpOverlapped && !RegisterUdpIo(operation))
             return SOCKET_ERROR;
 
-        WSABUF proxyBuffer = {
-            static_cast<ULONG>(operation->buffer.size()),
-            reinterpret_cast<char*>(operation->buffer.data())
-        };
+        WSABUF proxyBuffer = {static_cast<ULONG>(operation->buffer.size()),
+                              reinterpret_cast<char*>(operation->buffer.data())};
         DWORD localReceived = 0;
         LPDWORD bytesReceived = lpNumberOfBytesRecvd ? lpNumberOfBytesRecvd : &localReceived;
         int status = Hooks::Real_WSARecvFrom(
             s, &proxyBuffer, 1, bytesReceived, &operation->receiveFlags,
-            reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength,
-            lpOverlapped, lpOverlapped && lpCompletionRoutine
-                ? UdpIoCompletionRoutine
-                : lpCompletionRoutine);
+            reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength, lpOverlapped,
+            lpOverlapped && lpCompletionRoutine ? UdpIoCompletionRoutine : lpCompletionRoutine);
         int error = status == 0 ? 0 : WSAGetLastError();
 
         if (status == 0) {
@@ -893,8 +910,8 @@ namespace droute {
         return status;
     }
 
-    BOOL WSAAPI Mine_WSAGetOverlappedResult(SOCKET s, LPWSAOVERLAPPED lpOverlapped,
-                                            LPDWORD lpcbTransfer, BOOL fWait, LPDWORD lpdwFlags) {
+    BOOL WSAAPI Mine_WSAGetOverlappedResult(SOCKET s, LPWSAOVERLAPPED lpOverlapped, LPDWORD lpcbTransfer, BOOL fWait,
+                                            LPDWORD lpdwFlags) {
         BOOL result = Hooks::Real_WSAGetOverlappedResult(s, lpOverlapped, lpcbTransfer, fWait, lpdwFlags);
         int error = result ? 0 : WSAGetLastError();
 
@@ -925,15 +942,12 @@ namespace droute {
     }
 
     BOOL WINAPI Mine_GetQueuedCompletionStatus(HANDLE completionPort, LPDWORD bytesTransferred,
-                                               PULONG_PTR completionKey, LPOVERLAPPED* overlapped,
-                                               DWORD milliseconds) {
-        BOOL result = Hooks::Real_GetQueuedCompletionStatus(
-            completionPort, bytesTransferred, completionKey, overlapped, milliseconds);
+                                               PULONG_PTR completionKey, LPOVERLAPPED* overlapped, DWORD milliseconds) {
+        BOOL result = Hooks::Real_GetQueuedCompletionStatus(completionPort, bytesTransferred, completionKey, overlapped,
+                                                            milliseconds);
         int error = result ? 0 : static_cast<int>(GetLastError());
 
-        LPWSAOVERLAPPED completed = overlapped
-            ? reinterpret_cast<LPWSAOVERLAPPED>(*overlapped)
-            : nullptr;
+        LPWSAOVERLAPPED completed = overlapped ? reinterpret_cast<LPWSAOVERLAPPED>(*overlapped) : nullptr;
         auto operation = TakeUdpIo(completed);
         if (!operation) {
             if (!result)
@@ -953,11 +967,10 @@ namespace droute {
         return TRUE;
     }
 
-    BOOL WINAPI Mine_GetQueuedCompletionStatusEx(HANDLE completionPort,
-                                                 LPOVERLAPPED_ENTRY entries, ULONG count,
+    BOOL WINAPI Mine_GetQueuedCompletionStatusEx(HANDLE completionPort, LPOVERLAPPED_ENTRY entries, ULONG count,
                                                  PULONG removed, DWORD milliseconds, BOOL alertable) {
-        BOOL result = Hooks::Real_GetQueuedCompletionStatusEx(
-            completionPort, entries, count, removed, milliseconds, alertable);
+        BOOL result =
+            Hooks::Real_GetQueuedCompletionStatusEx(completionPort, entries, count, removed, milliseconds, alertable);
         DWORD error = result ? ERROR_SUCCESS : GetLastError();
         if (!result || !entries || !removed) {
             if (!result)
@@ -966,32 +979,28 @@ namespace droute {
         }
 
         for (ULONG i = 0; i < *removed; ++i) {
-            auto operation = TakeUdpIo(
-                reinterpret_cast<LPWSAOVERLAPPED>(entries[i].lpOverlapped));
+            auto operation = TakeUdpIo(reinterpret_cast<LPWSAOVERLAPPED>(entries[i].lpOverlapped));
             if (!operation)
                 continue;
 
-            const int operationError = entries[i].Internal == 0
-                ? 0
-                : WSA_OPERATION_ABORTED;
+            const int operationError = entries[i].Internal == 0 ? 0 : WSA_OPERATION_ABORTED;
             if (entries[i].Internal != 0) {
-                LOG_WARN("event=udp.iocp.status flow=%llu socket=%llu generation=%llu api=GetQueuedCompletionStatusEx ntstatus=0x%llX mapped_error=%d",
-                    operation->observation.flowId, (ULONG_PTR)operation->socket,
-                    operation->observation.generation, static_cast<uint64_t>(entries[i].Internal), operationError);
+                LOG_WARN("event=udp.iocp.status flow=%llu socket=%llu generation=%llu api=GetQueuedCompletionStatusEx "
+                         "ntstatus=0x%llX mapped_error=%d",
+                         operation->observation.flowId, (ULONG_PTR)operation->socket, operation->observation.generation,
+                         static_cast<uint64_t>(entries[i].Internal), operationError);
             }
-            UdpCompletion completion = CompleteUdpIo(
-                operation, operationError, entries[i].dwNumberOfBytesTransferred, "GetQueuedCompletionStatusEx");
+            UdpCompletion completion = CompleteUdpIo(operation, operationError, entries[i].dwNumberOfBytesTransferred,
+                                                     "GetQueuedCompletionStatusEx");
             entries[i].dwNumberOfBytesTransferred = completion.bytes;
         }
         return TRUE;
     }
 
-    static BOOL FinishKernelOverlappedResult(BOOL result, DWORD error,
-                                             LPOVERLAPPED overlapped,
+    static BOOL FinishKernelOverlappedResult(BOOL result, DWORD error, LPOVERLAPPED overlapped,
                                              LPDWORD bytesTransferred, const char* api) {
         // a timeout or interrupted wait leaves I/O pending; keep its buffers alive.
-        if (!result && (error == ERROR_IO_INCOMPLETE || error == WAIT_TIMEOUT ||
-                        error == WAIT_IO_COMPLETION)) {
+        if (!result && (error == ERROR_IO_INCOMPLETE || error == WAIT_TIMEOUT || error == WAIT_IO_COMPLETION)) {
             SetLastError(error);
             return result;
         }
@@ -1004,8 +1013,7 @@ namespace droute {
         }
 
         const DWORD transferred = bytesTransferred ? *bytesTransferred : 0;
-        UdpCompletion completion = CompleteUdpIo(
-            operation, result ? 0 : static_cast<int>(error), transferred, api);
+        UdpCompletion completion = CompleteUdpIo(operation, result ? 0 : static_cast<int>(error), transferred, api);
         if (bytesTransferred)
             *bytesTransferred = completion.bytes;
         if (completion.error != 0) {
@@ -1015,18 +1023,15 @@ namespace droute {
         return TRUE;
     }
 
-    BOOL WINAPI Mine_GetOverlappedResult(HANDLE file, LPOVERLAPPED overlapped,
-                                         LPDWORD bytesTransferred, BOOL wait) {
+    BOOL WINAPI Mine_GetOverlappedResult(HANDLE file, LPOVERLAPPED overlapped, LPDWORD bytesTransferred, BOOL wait) {
         BOOL result = Hooks::Real_GetOverlappedResult(file, overlapped, bytesTransferred, wait);
         DWORD error = result ? ERROR_SUCCESS : GetLastError();
         return FinishKernelOverlappedResult(result, error, overlapped, bytesTransferred, "GetOverlappedResult");
     }
 
-    BOOL WINAPI Mine_GetOverlappedResultEx(HANDLE file, LPOVERLAPPED overlapped,
-                                           LPDWORD bytesTransferred, DWORD milliseconds,
-                                           BOOL alertable) {
-        BOOL result = Hooks::Real_GetOverlappedResultEx(
-            file, overlapped, bytesTransferred, milliseconds, alertable);
+    BOOL WINAPI Mine_GetOverlappedResultEx(HANDLE file, LPOVERLAPPED overlapped, LPDWORD bytesTransferred,
+                                           DWORD milliseconds, BOOL alertable) {
+        BOOL result = Hooks::Real_GetOverlappedResultEx(file, overlapped, bytesTransferred, milliseconds, alertable);
         DWORD error = result ? ERROR_SUCCESS : GetLastError();
         return FinishKernelOverlappedResult(result, error, overlapped, bytesTransferred, "GetOverlappedResultEx");
     }
@@ -1061,9 +1066,10 @@ namespace droute {
         if (flow || tcp.id) {
             const int error = result == SOCKET_ERROR ? WSAGetLastError() : 0;
             const LogLevel level = error ? LogLevel::Warn : LogLevel::Info;
-            DROUTE_LOG(level, "event=socket.close flow=%llu connection=%llu socket=%llu result=%d wsa_error=%d lifetime_ms=%llu",
-                flow, tcp.id, (ULONG_PTR)s, result, error,
-                GetTickCount64() - (tcp.id ? tcp.startedAt : createdAt));
+            DROUTE_LOG(
+                level,
+                "event=socket.close flow=%llu connection=%llu socket=%llu result=%d wsa_error=%d lifetime_ms=%llu",
+                flow, tcp.id, (ULONG_PTR)s, result, error, GetTickCount64() - (tcp.id ? tcp.startedAt : createdAt));
         }
         return result;
     }
@@ -1078,8 +1084,8 @@ namespace droute {
             g_nonBlockingSockets.insert(s);
         }
         LOG_DEBUG("event=socket.notification socket=%llu api=WSAEventSelect event=%p mask=0x%lX result=%d wsa_error=%d",
-            (ULONG_PTR)s, hEventObject, lNetworkEvents, result,
-            result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
+                  (ULONG_PTR)s, hEventObject, lNetworkEvents, result,
+                  result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
         return result;
     }
 
@@ -1091,9 +1097,10 @@ namespace droute {
             std::unique_lock<std::shared_mutex> lock(g_stateMutex);
             g_nonBlockingSockets.insert(s);
         }
-        LOG_DEBUG("event=socket.notification socket=%llu api=WSAAsyncSelect window=%p message=%u mask=0x%lX result=%d wsa_error=%d",
-            (ULONG_PTR)s, hWnd, wMsg, lEvent, result,
-            result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
+        LOG_DEBUG("event=socket.notification socket=%llu api=WSAAsyncSelect window=%p message=%u mask=0x%lX result=%d "
+                  "wsa_error=%d",
+                  (ULONG_PTR)s, hWnd, wMsg, lEvent, result,
+                  result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
         return result;
     }
 
@@ -1117,8 +1124,7 @@ namespace droute {
             }
         }
         LOG_DEBUG("event=socket.mode socket=%llu api=ioctlsocket requested_nonblocking=%s result=%d wsa_error=%d",
-            (ULONG_PTR)s, mode, result,
-            result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
+                  (ULONG_PTR)s, mode, result, result == SOCKET_ERROR ? static_cast<int>(resultError.error) : 0);
         return result;
     }
 

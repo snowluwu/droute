@@ -1,21 +1,30 @@
 #include "pch.h"
 #include "src/core/utils.hpp"
+
 namespace droute {
 
     bool IsLocalAddr(const sockaddr_in& addr) {
-        if (addr.sin_family != AF_INET) return false;
+        if (addr.sin_family != AF_INET)
+            return false;
         uint32_t ip = ntohl(addr.sin_addr.s_addr);
-        if (ip == 0x7F000001) return true;
-        if ((ip & 0xFF000000) == 0x7F000000) return true;
-        if ((ip & 0xFF000000) == 0x0A000000) return true;
-        if ((ip & 0xFFF00000) == 0xAC100000) return true;
-        if ((ip & 0xFFFF0000) == 0xC0A80000) return true;
-        if ((ip & 0xFFFF0000) == 0xA9FE0000) return true;
+        if (ip == 0x7F000001)
+            return true;
+        if ((ip & 0xFF000000) == 0x7F000000)
+            return true;
+        if ((ip & 0xFF000000) == 0x0A000000)
+            return true;
+        if ((ip & 0xFFF00000) == 0xAC100000)
+            return true;
+        if ((ip & 0xFFFF0000) == 0xC0A80000)
+            return true;
+        if ((ip & 0xFFFF0000) == 0xA9FE0000)
+            return true;
         return false;
     }
 
     bool IsMulticast(const sockaddr_in& addr) {
-        if (addr.sin_family != AF_INET) return false;
+        if (addr.sin_family != AF_INET)
+            return false;
         uint32_t ip = ntohl(addr.sin_addr.s_addr);
         return (ip & 0xF0000000) == 0xE0000000;
     }
@@ -29,16 +38,17 @@ namespace droute {
     }
 
     bool IsSameAddr(const sockaddr_in& a, const sockaddr_in& b) {
-        return a.sin_family == b.sin_family &&
-               a.sin_addr.s_addr == b.sin_addr.s_addr &&
-               a.sin_port == b.sin_port;
+        return a.sin_family == b.sin_family && a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
     }
 
     bool IsSocketDisconnected(SOCKET s, int* error, const char** reason) {
-        if (error) *error = 0;
-        if (reason) *reason = "connected";
+        if (error)
+            *error = 0;
+        if (reason)
+            *reason = "connected";
         if (s == INVALID_SOCKET) {
-            if (reason) *reason = "invalid_control_socket";
+            if (reason)
+                *reason = "invalid_control_socket";
             return true;
         }
 
@@ -51,8 +61,10 @@ namespace droute {
         if (result == 0)
             return false;
         if (result == SOCKET_ERROR) {
-            if (error) *error = WSAGetLastError();
-            if (reason) *reason = "control_select_failed";
+            if (error)
+                *error = WSAGetLastError();
+            if (reason)
+                *reason = "control_select_failed";
             return true;
         }
 
@@ -61,14 +73,18 @@ namespace droute {
         if (result > 0)
             return false;
         if (result == 0) {
-            if (reason) *reason = "control_peer_closed";
+            if (reason)
+                *reason = "control_peer_closed";
             return true;
         }
 
         const int socketError = WSAGetLastError();
-        if (socketError == WSAEWOULDBLOCK) return false;
-        if (error) *error = socketError;
-        if (reason) *reason = "control_recv_failed";
+        if (socketError == WSAEWOULDBLOCK)
+            return false;
+        if (error)
+            *error = socketError;
+        if (reason)
+            *reason = "control_recv_failed";
         return true;
     }
 
@@ -142,9 +158,7 @@ namespace droute {
             return 0;
 
         const uint64_t remaining = deadline - now;
-        return remaining > static_cast<uint64_t>(INT_MAX)
-            ? INT_MAX
-            : static_cast<int>(remaining);
+        return remaining > static_cast<uint64_t>(INT_MAX) ? INT_MAX : static_cast<int>(remaining);
     }
 
     bool SendAll(SOCKET s, const void* data, int len, uint64_t deadline) {

@@ -7,15 +7,24 @@ namespace droute {
 
     static int Socks5ReplyToWsaError(uint8_t reply) {
         switch (reply) {
-        case 0x01: return WSAECONNREFUSED;
-        case 0x02: return WSAEACCES;
-        case 0x03: return WSAENETUNREACH;
-        case 0x04: return WSAEHOSTUNREACH;
-        case 0x05: return WSAECONNREFUSED;
-        case 0x06: return WSAETIMEDOUT;
-        case 0x07: return WSAEOPNOTSUPP;
-        case 0x08: return WSAEAFNOSUPPORT;
-        default:   return WSAECONNRESET;
+        case 0x01:
+            return WSAECONNREFUSED;
+        case 0x02:
+            return WSAEACCES;
+        case 0x03:
+            return WSAENETUNREACH;
+        case 0x04:
+            return WSAEHOSTUNREACH;
+        case 0x05:
+            return WSAECONNREFUSED;
+        case 0x06:
+            return WSAETIMEDOUT;
+        case 0x07:
+            return WSAEOPNOTSUPP;
+        case 0x08:
+            return WSAEAFNOSUPPORT;
+        default:
+            return WSAECONNRESET;
         }
     }
 
@@ -43,16 +52,19 @@ namespace droute {
     bool Socks5ReadReply(SOCKET s, Socks5Reply& out, uint64_t deadline) {
         uint8_t header[4];
         if (!RecvAll(s, header, 4, deadline)) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to read reply header wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to read reply header wsa_error=%d",
+                      (ULONG_PTR)s, WSAGetLastError());
             return false;
         }
         if (header[0] != 0x05) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: invalid version 0x%02X", (ULONG_PTR)s, header[0]);
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: invalid version 0x%02X", (ULONG_PTR)s,
+                      header[0]);
             WSASetLastError(WSAEPROTONOSUPPORT);
             return false;
         }
         if (header[2] != 0x00) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: invalid reserved byte 0x%02X", (ULONG_PTR)s, header[2]);
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: invalid reserved byte 0x%02X", (ULONG_PTR)s,
+                      header[2]);
             WSASetLastError(WSAEPROTONOSUPPORT);
             return false;
         }
@@ -69,7 +81,8 @@ namespace droute {
         case 0x03: {
             uint8_t domainLen;
             if (!RecvAll(s, &domainLen, 1, deadline)) {
-                LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to read domain length wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+                LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to read domain length wsa_error=%d",
+                          (ULONG_PTR)s, WSAGetLastError());
                 return false;
             }
             addrLen = domainLen + 2;
@@ -79,14 +92,16 @@ namespace droute {
             addrLen = 16 + 2;
             break;
         default:
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: unsupported ATYP 0x%02X", (ULONG_PTR)s, out.atyp);
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: unsupported ATYP 0x%02X", (ULONG_PTR)s,
+                      out.atyp);
             WSASetLastError(WSAEAFNOSUPPORT);
             return false;
         }
 
         std::vector<uint8_t> addrBuf(addrLen);
         if (!RecvAll(s, addrBuf.data(), static_cast<int>(addrLen), deadline)) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to read reply address wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to read reply address wsa_error=%d",
+                      (ULONG_PTR)s, WSAGetLastError());
             return false;
         }
 
@@ -99,17 +114,19 @@ namespace droute {
         } else if (out.atyp == 0x03) {
             size_t domainLen = addrLen - 2;
             if (!ResolveReplyDomain(addrBuf.data(), domainLen, out.boundAddr.sin_addr)) {
-                LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to resolve reply domain wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+                LOG_ERROR(
+                    "event=socks5.error socket=%llu socks5 handshake: failed to resolve reply domain wsa_error=%d",
+                    (ULONG_PTR)s, WSAGetLastError());
                 return false;
             }
             memcpy(&out.boundAddr.sin_port, addrBuf.data() + domainLen, 2);
         } else {
-            static const uint8_t ipv4MappedPrefix[12] = {
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF
-            };
+            static const uint8_t ipv4MappedPrefix[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
             if (memcmp(addrBuf.data(), ipv4MappedPrefix, sizeof(ipv4MappedPrefix)) != 0) {
                 WSASetLastError(WSAEAFNOSUPPORT);
-                LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: IPv6 relay is not supported by an IPv4 socket", (ULONG_PTR)s);
+                LOG_ERROR(
+                    "event=socks5.error socket=%llu socks5 handshake: IPv6 relay is not supported by an IPv4 socket",
+                    (ULONG_PTR)s);
                 return false;
             }
             memcpy(&out.boundAddr.sin_addr.s_addr, addrBuf.data() + 12, 4);
@@ -121,20 +138,22 @@ namespace droute {
 
     bool Socks5Handshake(SOCKET s, const char* user, const char* pass, uint64_t deadline) {
         bool hasAuth = user && user[0] && pass && pass[0];
-        LOG_DEBUG("event=socks5.greeting.start socket=%llu auth_configured=%s remaining_ms=%d",
-            (ULONG_PTR)s, hasAuth ? "yes" : "no", RemainingTimeout(deadline));
+        LOG_DEBUG("event=socks5.greeting.start socket=%llu auth_configured=%s remaining_ms=%d", (ULONG_PTR)s,
+                  hasAuth ? "yes" : "no", RemainingTimeout(deadline));
 
-        uint8_t req[4] = { 0x05, hasAuth ? uint8_t(0x02) : uint8_t(0x01), 0x00, uint8_t(0x02) };
+        uint8_t req[4] = {0x05, hasAuth ? uint8_t(0x02) : uint8_t(0x01), 0x00, uint8_t(0x02)};
         int reqLen = hasAuth ? 4 : 3;
 
         if (!SendAll(s, req, reqLen, deadline)) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to send greeting wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to send greeting wsa_error=%d",
+                      (ULONG_PTR)s, WSAGetLastError());
             return false;
         }
 
         uint8_t resp[2];
         if (!RecvAll(s, resp, 2, deadline)) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to recv greeting response wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: failed to recv greeting response wsa_error=%d",
+                      (ULONG_PTR)s, WSAGetLastError());
             return false;
         }
 
@@ -147,7 +166,8 @@ namespace droute {
         LOG_DEBUG("event=socks5.greeting.selected socket=%llu method=0x%02X", (ULONG_PTR)s, resp[1]);
         if (resp[1] == 0x02) {
             if (!hasAuth) {
-                LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: server demands auth but none configured", (ULONG_PTR)s);
+                LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: server demands auth but none configured",
+                          (ULONG_PTR)s);
                 WSASetLastError(WSAEACCES);
                 return false;
             }
@@ -163,17 +183,21 @@ namespace droute {
             size_t pos = 0;
             auth[pos++] = 0x01;
             auth[pos++] = static_cast<uint8_t>(ulen);
-            memcpy(&auth[pos], user, ulen); pos += ulen;
+            memcpy(&auth[pos], user, ulen);
+            pos += ulen;
             auth[pos++] = static_cast<uint8_t>(plen);
-            memcpy(&auth[pos], pass, plen); pos += plen;
+            memcpy(&auth[pos], pass, plen);
+            pos += plen;
 
             if (!SendAll(s, auth, static_cast<int>(pos), deadline)) {
-                LOG_ERROR("event=socks5.error socket=%llu socks5 auth: failed to send credentials wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+                LOG_ERROR("event=socks5.error socket=%llu socks5 auth: failed to send credentials wsa_error=%d",
+                          (ULONG_PTR)s, WSAGetLastError());
                 return false;
             }
             uint8_t aresp[2];
             if (!RecvAll(s, aresp, 2, deadline)) {
-                LOG_ERROR("event=socks5.error socket=%llu socks5 auth: failed to recv auth response wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+                LOG_ERROR("event=socks5.error socket=%llu socks5 auth: failed to recv auth response wsa_error=%d",
+                          (ULONG_PTR)s, WSAGetLastError());
                 return false;
             }
             if (aresp[0] != 0x01 || aresp[1] != 0x00) {
@@ -183,7 +207,8 @@ namespace droute {
             }
         } else if (resp[1] == 0x00) {
         } else {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: unsupported method 0x%02X", (ULONG_PTR)s, resp[1]);
+            LOG_ERROR("event=socks5.error socket=%llu socks5 handshake: unsupported method 0x%02X", (ULONG_PTR)s,
+                      resp[1]);
             WSASetLastError(WSAEACCES);
             return false;
         }
@@ -193,14 +218,15 @@ namespace droute {
     }
 
     bool Socks5RequestConnect(SOCKET s, const sockaddr_in& target, uint64_t deadline) {
-        LOG_DEBUG("event=socks5.connect.request socket=%llu destination=%s remaining_ms=%d",
-            (ULONG_PTR)s, AddrToString(target).c_str(), RemainingTimeout(deadline));
-        uint8_t req[10] = { 0x05, 0x01, 0x00, 0x01 };
+        LOG_DEBUG("event=socks5.connect.request socket=%llu destination=%s remaining_ms=%d", (ULONG_PTR)s,
+                  AddrToString(target).c_str(), RemainingTimeout(deadline));
+        uint8_t req[10] = {0x05, 0x01, 0x00, 0x01};
         memcpy(req + 4, &target.sin_addr.s_addr, 4);
         memcpy(req + 8, &target.sin_port, 2);
 
         if (!SendAll(s, req, 10, deadline)) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 connect: failed to send request wsa_error=%d", (ULONG_PTR)s, WSAGetLastError());
+            LOG_ERROR("event=socks5.error socket=%llu socks5 connect: failed to send request wsa_error=%d",
+                      (ULONG_PTR)s, WSAGetLastError());
             return false;
         }
 
@@ -218,10 +244,12 @@ namespace droute {
     }
 
     bool Socks5RequestUdpAssociate(SOCKET ctrl, sockaddr_in& outRelay, uint64_t deadline) {
-        LOG_DEBUG("event=socks5.udp_associate.request control=%llu remaining_ms=%d", (ULONG_PTR)ctrl, RemainingTimeout(deadline));
-        uint8_t req[10] = { 0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0 };
+        LOG_DEBUG("event=socks5.udp_associate.request control=%llu remaining_ms=%d", (ULONG_PTR)ctrl,
+                  RemainingTimeout(deadline));
+        uint8_t req[10] = {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
         if (!SendAll(ctrl, req, 10, deadline)) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 udp associate: failed to send request wsa_error=%d", (ULONG_PTR)ctrl, WSAGetLastError());
+            LOG_ERROR("event=socks5.error socket=%llu socks5 udp associate: failed to send request wsa_error=%d",
+                      (ULONG_PTR)ctrl, WSAGetLastError());
             return false;
         }
 
@@ -230,7 +258,8 @@ namespace droute {
             return false;
         }
         if (reply.rep != 0x00) {
-            LOG_ERROR("event=socks5.error socket=%llu socks5 udp associate rejected: rep=0x%02X", (ULONG_PTR)ctrl, reply.rep);
+            LOG_ERROR("event=socks5.error socket=%llu socks5 udp associate rejected: rep=0x%02X", (ULONG_PTR)ctrl,
+                      reply.rep);
             WSASetLastError(Socks5ReplyToWsaError(reply.rep));
             return false;
         }
@@ -242,14 +271,16 @@ namespace droute {
             if (getpeername(ctrl, reinterpret_cast<sockaddr*>(&peer), &peerLength) != 0)
                 return false;
             outRelay.sin_addr = peer.sin_addr;
-            LOG_DEBUG("event=socks5.udp_associate.resolve_wildcard control=%llu resolved=%s", (ULONG_PTR)ctrl, AddrToString(outRelay).c_str());
+            LOG_DEBUG("event=socks5.udp_associate.resolve_wildcard control=%llu resolved=%s", (ULONG_PTR)ctrl,
+                      AddrToString(outRelay).c_str());
         }
         if (outRelay.sin_port == 0) {
             LOG_ERROR("event=socks5.udp_associate.invalid_relay control=%llu reason=zero_port", (ULONG_PTR)ctrl);
             WSASetLastError(WSAEADDRNOTAVAIL);
             return false;
         }
-        LOG_DEBUG("event=socks5.udp_associate.ready control=%llu relay=%s", (ULONG_PTR)ctrl, AddrToString(outRelay).c_str());
+        LOG_DEBUG("event=socks5.udp_associate.ready control=%llu relay=%s", (ULONG_PTR)ctrl,
+                  AddrToString(outRelay).c_str());
         return true;
     }
 
@@ -276,10 +307,13 @@ namespace droute {
     }
 
     bool Socks5UnwrapUdp(const void* data, int len, sockaddr_in& outSrc, const void*& outPayload, int& outPayloadLen) {
-        if (!data || len < 4) return false;
+        if (!data || len < 4)
+            return false;
         const uint8_t* p = static_cast<const uint8_t*>(data);
-        if (p[0] != 0x00 || p[1] != 0x00) return false;
-        if (p[2] != 0x00) return false;
+        if (p[0] != 0x00 || p[1] != 0x00)
+            return false;
+        if (p[2] != 0x00)
+            return false;
 
         memset(&outSrc, 0, sizeof(outSrc));
         outSrc.sin_family = AF_INET;
@@ -288,16 +322,19 @@ namespace droute {
         switch (p[3]) {
         case 0x01:
             headerSize = SOCKS5_UDP_HEADER_SIZE;
-            if (len < headerSize) return false;
+            if (len < headerSize)
+                return false;
             memcpy(&outSrc.sin_addr.s_addr, p + 4, 4);
             memcpy(&outSrc.sin_port, p + 8, 2);
             break;
 
         case 0x03: {
-            if (len < 5) return false;
+            if (len < 5)
+                return false;
             const uint8_t domainLength = p[4];
             headerSize = 7 + domainLength;
-            if (len < headerSize) return false;
+            if (len < headerSize)
+                return false;
             if (!ResolveReplyDomain(p + 5, domainLength, outSrc.sin_addr))
                 return false;
             memcpy(&outSrc.sin_port, p + 5 + domainLength, 2);
@@ -306,10 +343,9 @@ namespace droute {
 
         case 0x04: {
             headerSize = 22;
-            if (len < headerSize) return false;
-            static const uint8_t ipv4MappedPrefix[12] = {
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF
-            };
+            if (len < headerSize)
+                return false;
+            static const uint8_t ipv4MappedPrefix[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
             if (memcmp(p + 4, ipv4MappedPrefix, sizeof(ipv4MappedPrefix)) != 0)
                 return false;
             memcpy(&outSrc.sin_addr.s_addr, p + 16, 4);

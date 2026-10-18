@@ -8,17 +8,12 @@ namespace droute {
     std::wstring g_ourDir;
 
     namespace Hooks {
-        BOOL (WINAPI* Real_CreateProcessW)(
-            LPCWSTR, LPWSTR,
-            LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES,
-            BOOL, DWORD, LPVOID, LPCWSTR,
-            LPSTARTUPINFOW, LPPROCESS_INFORMATION
-        ) = CreateProcessW;
+        BOOL(WINAPI* Real_CreateProcessW)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD,
+                                          LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION) = CreateProcessW;
     }
 
     static bool IsDiscordApp(const std::wstring& name) {
-        return _wcsicmp(name.c_str(), L"Discord.exe") == 0 ||
-               _wcsicmp(name.c_str(), L"DiscordCanary.exe") == 0 ||
+        return _wcsicmp(name.c_str(), L"Discord.exe") == 0 || _wcsicmp(name.c_str(), L"DiscordCanary.exe") == 0 ||
                _wcsicmp(name.c_str(), L"DiscordPTB.exe") == 0;
     }
 
@@ -49,8 +44,7 @@ namespace droute {
             if (swscanf_s(verStr.c_str(), L"%d.%d.%d.%d", &a, &b, &c, &d) < 3)
                 continue;
 
-            uint64_t ver = ((uint64_t)a << 48) | ((uint64_t)b << 32) |
-                           ((uint64_t)c << 16) | (uint64_t)d;
+            uint64_t ver = ((uint64_t)a << 48) | ((uint64_t)b << 32) | ((uint64_t)c << 16) | (uint64_t)d;
             if (ver > bestVer) {
                 bestVer = ver;
                 latest = branchRoot + L"\\" + fd.cFileName;
@@ -90,18 +84,11 @@ namespace droute {
 
 }
 
-BOOL WINAPI Mine_CreateProcessW(
-    LPCWSTR lpApplicationName,
-    LPWSTR lpCommandLine,
-    LPSECURITY_ATTRIBUTES lpProcessAttributes,
-    LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    BOOL bInheritHandles,
-    DWORD dwCreationFlags,
-    LPVOID lpEnvironment,
-    LPCWSTR lpCurrentDirectory,
-    LPSTARTUPINFOW lpStartupInfo,
-    LPPROCESS_INFORMATION lpProcessInformation)
-{
+BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
+                                LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes,
+                                BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment,
+                                LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo,
+                                LPPROCESS_INFORMATION lpProcessInformation) {
     // deploy DLLs before call so new process starts with version.dll
     std::wstring exePath;
 
@@ -120,8 +107,7 @@ BOOL WINAPI Mine_CreateProcessW(
     }
 
     if (!exePath.empty()) {
-        if (exePath.find(L'\\') == std::wstring::npos &&
-            exePath.find(L'/') == std::wstring::npos) {
+        if (exePath.find(L'\\') == std::wstring::npos && exePath.find(L'/') == std::wstring::npos) {
             std::wstring dir;
             if (lpCurrentDirectory && lpCurrentDirectory[0]) {
                 dir = lpCurrentDirectory;
@@ -139,8 +125,7 @@ BOOL WINAPI Mine_CreateProcessW(
             std::wstring fileName = exePath.substr(sep + 1);
             std::wstring targetDir = exePath.substr(0, sep);
 
-            if (droute::IsDiscordApp(fileName) &&
-                _wcsicmp(targetDir.c_str(), droute::g_ourDir.c_str()) != 0) {
+            if (droute::IsDiscordApp(fileName) && _wcsicmp(targetDir.c_str(), droute::g_ourDir.c_str()) != 0) {
 
                 LOG_INFO("discord launch detected: %S", exePath.c_str());
 
@@ -156,11 +141,7 @@ BOOL WINAPI Mine_CreateProcessW(
         }
     }
 
-    return droute::Hooks::Real_CreateProcessW(
-        lpApplicationName, lpCommandLine,
-        lpProcessAttributes, lpThreadAttributes,
-        bInheritHandles, dwCreationFlags,
-        lpEnvironment, lpCurrentDirectory,
-        lpStartupInfo, lpProcessInformation
-    );
+    return droute::Hooks::Real_CreateProcessW(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes,
+                                              bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory,
+                                              lpStartupInfo, lpProcessInformation);
 }

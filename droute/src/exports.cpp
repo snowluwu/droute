@@ -9,7 +9,7 @@
 
 namespace droute {
 
-    static std::atomic<bool> g_running{ false };
+    static std::atomic<bool> g_running{false};
 
     void ReconnectWorker() {
         while (g_running.load(std::memory_order_relaxed)) {
@@ -26,9 +26,10 @@ namespace droute {
                         !IsSocketDisconnected(association.ctrlSocket, &error, &reason))
                         continue;
 
-                    LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu trigger=worker reason=%s wsa_error=%d control=%llu relay=%s",
-                        association.flowId, (ULONG_PTR)entry.first, association.generation, reason, error,
-                        (ULONG_PTR)association.ctrlSocket, AddrToString(association.relayAddr).c_str());
+                    LOG_WARN("event=udp.associate.pending flow=%llu socket=%llu generation=%llu trigger=worker "
+                             "reason=%s wsa_error=%d control=%llu relay=%s",
+                             association.flowId, (ULONG_PTR)entry.first, association.generation, reason, error,
+                             (ULONG_PTR)association.ctrlSocket, AddrToString(association.relayAddr).c_str());
                     if (association.ctrlSocket != INVALID_SOCKET)
                         Hooks::Real_closesocket(association.ctrlSocket);
                     association.ctrlSocket = INVALID_SOCKET;

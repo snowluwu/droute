@@ -7,7 +7,7 @@ namespace droute {
 
     struct Config {
         std::string host = "127.0.0.1";
-        uint16_t    port = 1080;
+        uint16_t port = 1080;
         std::string user;
         std::string password;
 

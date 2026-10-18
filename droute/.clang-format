@@ -1,0 +1,12 @@
+BasedOnStyle: Microsoft
+BreakBeforeBraces: Attach
+NamespaceIndentation: All
+ColumnLimit: 120
+PointerAlignment: Left
+SortIncludes: Never
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+SeparateDefinitionBlocks: Always
+FixNamespaceComments: false
+LineEnding: CRLF

@@ -20,11 +20,13 @@ namespace droute {
 
             DWORD type = 0;
             DWORD size = 0;
-            if (RegQueryValueExA(hKey, name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS || type != REG_SZ || size == 0)
+            if (RegQueryValueExA(hKey, name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS || type != REG_SZ ||
+                size == 0)
                 return false;
 
             std::vector<char> buf(size + 1, '\0');
-            if (RegQueryValueExA(hKey, name, nullptr, &type, reinterpret_cast<LPBYTE>(buf.data()), &size) != ERROR_SUCCESS)
+            if (RegQueryValueExA(hKey, name, nullptr, &type, reinterpret_cast<LPBYTE>(buf.data()), &size) !=
+                ERROR_SUCCESS)
                 return false;
 
             out.assign(buf.data(), strnlen_s(buf.data(), size));
@@ -35,7 +37,8 @@ namespace droute {
             if (!hasRegistryConfig)
                 return false;
             DWORD type = 0, val = 0, size = sizeof(val);
-            if (RegQueryValueExA(hKey, name, nullptr, &type, (LPBYTE)&val, &size) == ERROR_SUCCESS && type == REG_DWORD) {
+            if (RegQueryValueExA(hKey, name, nullptr, &type, (LPBYTE)&val, &size) == ERROR_SUCCESS &&
+                type == REG_DWORD) {
                 out = val;
                 return true;
             }
@@ -60,12 +63,16 @@ namespace droute {
 
         uint32_t tmp;
         if (ReadDword("ConnectTimeout", tmp)) {
-            if (tmp > 0 && tmp <= INT_MAX) connectTimeout = tmp;
-            else LOG_WARN("invalid ConnectTimeout=%u, using default %u", tmp, connectTimeout);
+            if (tmp > 0 && tmp <= INT_MAX)
+                connectTimeout = tmp;
+            else
+                LOG_WARN("invalid ConnectTimeout=%u, using default %u", tmp, connectTimeout);
         }
         if (ReadDword("ReconnectInterval", tmp)) {
-            if (tmp > 0) reconnectInterval = tmp;
-            else LOG_WARN("invalid ReconnectInterval=0, using default %u", reconnectInterval);
+            if (tmp > 0)
+                reconnectInterval = tmp;
+            else
+                LOG_WARN("invalid ReconnectInterval=0, using default %u", reconnectInterval);
         }
         if (ReadDword("LogLevel", tmp)) {
             if (tmp <= static_cast<uint32_t>(LogLevel::Error)) {
@@ -98,16 +105,14 @@ namespace droute {
             }
         }
 
-        const char* authState = user.empty() && password.empty()
-            ? "none"
-            : (!user.empty() && !password.empty() ? "set" : "incomplete");
+        const char* authState =
+            user.empty() && password.empty() ? "none" : (!user.empty() && !password.empty() ? "set" : "incomplete");
         if (strcmp(authState, "incomplete") == 0)
             LOG_WARN("proxy credentials are incomplete; authentication is disabled");
 
         LOG_INFO("config source=%s proxy=%s auth=%s connect_timeout_ms=%u reconnect_interval_ms=%u log_level=%s",
-                 hasRegistryConfig ? "registry" : "defaults",
-                 AddrToString(g_proxyAddr).c_str(),
-                 authState, connectTimeout, reconnectInterval, LevelToString(logLevel));
+                 hasRegistryConfig ? "registry" : "defaults", AddrToString(g_proxyAddr).c_str(), authState,
+                 connectTimeout, reconnectInterval, LevelToString(logLevel));
         return hasRegistryConfig;
     }
 
