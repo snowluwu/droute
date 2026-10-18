@@ -78,6 +78,8 @@ namespace droute {
             WSASetLastError(WSAENETDOWN);
             return SOCKET_ERROR;
         }
+        if (IsUdpSocket(s))
+            return ConnectUdpSocket(s, name, namelen);
         if (!name || namelen < static_cast<int>(sizeof(sockaddr_in))) {
             return Hooks::Real_connect(s, name, namelen);
         }
@@ -98,9 +100,6 @@ namespace droute {
                       FormatAddress(*addr).c_str());
             return Hooks::Real_connect(s, name, namelen);
         }
-
-        if (IsUdpSocket(s))
-            return Hooks::Real_connect(s, name, namelen);
 
         bool wasNonBlocking = false;
         {

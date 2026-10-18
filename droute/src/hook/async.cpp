@@ -201,6 +201,9 @@ namespace droute {
     }
 
     static int WSAAPI Async_send(SOCKET s, const char* buffer, int length, int flags) {
+        sockaddr_in peer;
+        if (GetUdpPeer(s, peer))
+            return Mine_sendto(s, buffer, length, flags, reinterpret_cast<const sockaddr*>(&peer), sizeof(peer));
         int error = SocketError(s, true);
         if (!error)
             return Hooks::Real_send(s, buffer, length, flags);
@@ -209,6 +212,8 @@ namespace droute {
     }
 
     static int WSAAPI Async_recv(SOCKET s, char* buffer, int length, int flags) {
+        if (IsTrackedUdpSocket(s))
+            return Mine_recvfrom(s, buffer, length, flags, nullptr, nullptr);
         int error = SocketError(s, true);
         if (!error)
             return Hooks::Real_recv(s, buffer, length, flags);
@@ -218,6 +223,10 @@ namespace droute {
 
     static int WSAAPI Async_WSASend(SOCKET s, LPWSABUF buffers, DWORD count, LPDWORD bytes, DWORD flags,
                                     LPWSAOVERLAPPED overlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE callback) {
+        sockaddr_in peer;
+        if (GetUdpPeer(s, peer))
+            return Mine_WSASendTo(s, buffers, count, bytes, flags, reinterpret_cast<const sockaddr*>(&peer),
+                                  sizeof(peer), overlapped, callback);
         int error = SocketError(s, overlapped == nullptr);
         if (!error)
             return Real_WSASend(s, buffers, count, bytes, flags, overlapped, callback);
@@ -227,11 +236,26 @@ namespace droute {
 
     static int WSAAPI Async_WSARecv(SOCKET s, LPWSABUF buffers, DWORD count, LPDWORD bytes, LPDWORD flags,
                                     LPWSAOVERLAPPED overlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE callback) {
+        if (IsTrackedUdpSocket(s))
+            return Mine_WSARecvFrom(s, buffers, count, bytes, flags, nullptr, nullptr, overlapped, callback);
         int error = SocketError(s, overlapped == nullptr);
         if (!error)
             return Real_WSARecv(s, buffers, count, bytes, flags, overlapped, callback);
         WSASetLastError(error);
         return SOCKET_ERROR;
+    }
+
+    static int WSAAPI Async_getpeername(SOCKET s, sockaddr* address, int* length) {
+        sockaddr_in peer;
+        if (!GetUdpPeer(s, peer))
+            return Real_getpeername(s, address, length);
+        if (!address || !length || *length < static_cast<int>(sizeof(peer))) {
+            WSASetLastError(WSAEFAULT);
+            return SOCKET_ERROR;
+        }
+        memcpy(address, &peer, sizeof(peer));
+        *length = sizeof(peer);
+        return 0;
     }
 
     static int WSAAPI Async_getsockopt(SOCKET s, int level, int option, char* value, int* size) {
@@ -414,6 +438,7 @@ namespace droute {
         const Hook hooks[] = {{"select", (void*)Async_select, (void**)&Real_select},
                               {"WSAPoll", (void*)Async_poll, (void**)&Real_WSAPoll},
                               {"getsockopt", (void*)Async_getsockopt, (void**)&Real_getsockopt},
+                              {"getpeername", (void*)Async_getpeername, (void**)&Real_getpeername},
                               {"WSAEnumNetworkEvents", (void*)Async_enumEvents, (void**)&Real_WSAEnumNetworkEvents},
                               {"send", (void*)Async_send, (void**)&Hooks::Real_send},
                               {"recv", (void*)Async_recv, (void**)&Hooks::Real_recv},

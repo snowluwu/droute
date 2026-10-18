@@ -8,12 +8,12 @@
 
 namespace droute {
 
+    extern decltype(&CancelIoEx) Real_CancelIoEx;
 
     std::shared_mutex g_stateMutex;
     std::condition_variable_any g_udpAssociationChanged;
     std::map<SOCKET, UdpAssociation> g_udpMap;
     std::set<SOCKET> g_nonBlockingSockets;
-    std::set<SOCKET> g_pendingUdp;
     std::map<SOCKET, TcpConnection> g_tcpConnections;
 
     namespace Hooks {
@@ -118,6 +118,9 @@ namespace droute {
                 return false;
 
             if (!InstallAsyncHooks())
+                return false;
+
+            if (!HookOne(L"kernel32.dll", "CancelIoEx", (void*)Mine_CancelIoEx, (void**)&Real_CancelIoEx))
                 return false;
 
             status = MH_EnableHook(MH_ALL_HOOKS);
