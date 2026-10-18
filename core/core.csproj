@@ -46,9 +46,13 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="DiscordManager.cs" />
-    <Compile Include="Droute.cs" />
-    <Compile Include="PatchManager.cs" />
+    <Compile Include="Discord.cs" />
+    <Compile Include="DiscordBranch.cs" />
+    <Compile Include="DiscordInstallation.cs" />
+    <Compile Include="InstallationFiles.cs" />
+    <Compile Include="InstallationProgress.cs" />
+    <Compile Include="PatchInstaller.cs" />
+    <Compile Include="PatchFiles.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
