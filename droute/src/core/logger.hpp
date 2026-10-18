@@ -7,8 +7,8 @@ namespace droute {
     enum class LogLevel {
         Trace = 0,
         Debug = 1,
-        Info  = 2,
-        Warn  = 3,
+        Info = 2,
+        Warn = 3,
         Error = 4
     };
 
@@ -17,15 +17,18 @@ namespace droute {
     namespace Logger {
 
         bool Init();
-        // request queue drain and wait up to one second; call only outside DllMain.
+        // drains the queue; call only outside dllmain
         void Shutdown();
         void SetLevel(LogLevel level);
         bool Enabled(LogLevel level);
 
-        // logging must preserve the intercepted API's last error.
+        // preserve the intercepted api error
         struct ErrorScope {
             DWORD error = GetLastError();
-            ~ErrorScope() { SetLastError(error); }
+
+            ~ErrorScope() {
+                SetLastError(error);
+            }
         };
 
         void Write(LogLevel level, const char* file, int line, const char* fmt, ...);
@@ -34,9 +37,15 @@ namespace droute {
 
 }
 
-#define DROUTE_LOG(level, fmt, ...) do { if (droute::Logger::Enabled(level)) { droute::Logger::ErrorScope errorScope; droute::Logger::Write(level, __FILE__, __LINE__, fmt, ##__VA_ARGS__); } } while(0)
+#define DROUTE_LOG(level, fmt, ...)                                                                                    \
+    do {                                                                                                               \
+        if (droute::Logger::Enabled(level)) {                                                                          \
+            droute::Logger::ErrorScope errorScope;                                                                     \
+            droute::Logger::Write(level, __FILE__, __LINE__, fmt, ##__VA_ARGS__);                                      \
+        }                                                                                                              \
+    } while (0)
 #define LOG_TRACE(fmt, ...) DROUTE_LOG(droute::LogLevel::Trace, fmt, ##__VA_ARGS__)
 #define LOG_DEBUG(fmt, ...) DROUTE_LOG(droute::LogLevel::Debug, fmt, ##__VA_ARGS__)
-#define LOG_INFO(fmt, ...)  DROUTE_LOG(droute::LogLevel::Info, fmt, ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...)  DROUTE_LOG(droute::LogLevel::Warn, fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...) DROUTE_LOG(droute::LogLevel::Info, fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) DROUTE_LOG(droute::LogLevel::Warn, fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) DROUTE_LOG(droute::LogLevel::Error, fmt, ##__VA_ARGS__)

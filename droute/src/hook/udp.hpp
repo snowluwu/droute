@@ -4,13 +4,27 @@
 
 namespace droute {
 
-    bool TryUdpAssociate(UdpAssociation& out, uint64_t deadline = 0);
+    // the flow id distinguishes a socket from a later reuse of the same handle
+    struct UdpFlow {
+        SOCKET socket;
+        uint64_t flowId;
+
+        bool operator<(const UdpFlow& other) const {
+            if (socket != other.socket)
+                return socket < other.socket;
+            return flowId < other.flowId;
+        }
+    };
+
+    void QueueUdpAssociation(SOCKET socket);
+    int ConnectUdpSocket(SOCKET socket, const sockaddr* address, int length);
+    bool GetUdpPeer(SOCKET socket, sockaddr_in& peer);
+    bool IsTrackedUdpSocket(SOCKET socket);
+    BOOL WINAPI Mine_CancelIoEx(HANDLE file, LPOVERLAPPED overlapped);
     void MarkUdpAssociationPending(SOCKET s, SOCKET expectedControlSocket = INVALID_SOCKET,
                                    const char* reason = "unspecified", int error = 0);
 
-    // caller must hold g_stateMutex.
-    void LogUdpAssociationStart(SOCKET s, UdpAssociation& association, const char* trigger);
-    void LogUdpAssociationResult(SOCKET s, UdpAssociation& association, bool ok, int error, const char* stage);
+    // caller must hold the state lock
     void LogUdpSummary(SOCKET s, UdpAssociation& association, const char* event);
 
 }

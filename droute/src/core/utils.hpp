@@ -13,7 +13,6 @@ namespace droute {
     bool WaitForWrite(SOCKET s, int timeoutMs);
     bool WaitForRead(SOCKET s, int timeoutMs);
     bool WaitForConnect(SOCKET s, int timeoutMs);
-    bool SetNonBlocking(SOCKET s, bool nonBlock);
 
     uint64_t MakeDeadline(uint32_t timeoutMs);
     int RemainingTimeout(uint64_t deadline);
@@ -21,6 +20,6 @@ namespace droute {
     bool SendAll(SOCKET s, const void* data, int len, uint64_t deadline);
     bool RecvAll(SOCKET s, void* buf, int len, uint64_t deadline);
 
-    std::string AddrToString(const sockaddr_in& addr);
+    std::string FormatAddress(const sockaddr_in& addr);
 
 }

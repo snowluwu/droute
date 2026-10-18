@@ -1,0 +1,32 @@
+[changelog]
+header = "# Changelog\n"
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+## {{ group | striptags | trim }}
+
+{% for commit in commits %}\
+- [{{ commit.id | truncate(length=7, end="") }}:]({{ get_env(name="GITHUB_SERVER_URL", default="https://github.com") }}/{{ get_env(name="GITHUB_REPOSITORY", default="snowluwu/droute") }}/commit/{{ commit.id }}) `{{ commit.message | split(pat="\n") | first }}`
+{% endfor %}\
+{% endfor %}
+"""
+footer = "\n"
+trim = true
+
+[git]
+# Keep the original subject, including its type and scope.
+conventional_commits = false
+filter_unconventional = false
+split_commits = false
+commit_parsers = [
+    { field = "merge_commit", pattern = "true", skip = true },
+    { message = '^fix(\([^)]*\))?!?:', group = "<!-- 0 --> 🐛 Bug Fixes" },
+    { message = '^feat(\([^)]*\))?!?:', group = "<!-- 1 --> ✨ Features" },
+    { message = '^refactor(\([^)]*\))?!?:', group = "<!-- 2 --> ♻️ Refactoring" },
+    { message = '^perf(\([^)]*\))?!?:', group = "<!-- 3 --> ⚡ Performance" },
+    { message = '^docs?(\([^)]*\))?!?:', group = "<!-- 4 --> 📚 Documentation" },
+    { message = '^(build|ci)(\([^)]*\))?!?:', group = "<!-- 5 --> 🔧 Build & CI" },
+    { message = ".*", group = "<!-- 6 --> 🧹 Other Changes" },
+]
+filter_commits = false
+topo_order = true
+sort_commits = "newest"

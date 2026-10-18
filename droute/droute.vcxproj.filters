@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="src">
@@ -16,7 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="src\exports.hpp">
+    <ClInclude Include="src\dllmain.hpp">
       <Filter>src</Filter>
     </ClInclude>
     <ClInclude Include="src\core\config.hpp">
@@ -37,13 +37,16 @@
     <ClInclude Include="src\hook\tcp.hpp">
       <Filter>src\hook</Filter>
     </ClInclude>
+    <ClInclude Include="src\hook\async.hpp">
+      <Filter>src\hook</Filter>
+    </ClInclude>
     <ClInclude Include="src\hook\udp.hpp">
       <Filter>src\hook</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
-    <ClCompile Include="src\exports.cpp">
+    <ClCompile Include="src\dllmain.cpp">
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\core\config.cpp">
@@ -62,6 +65,9 @@
       <Filter>src\hook</Filter>
     </ClCompile>
     <ClCompile Include="src\hook\tcp.cpp">
+      <Filter>src\hook</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hook\async.cpp">
       <Filter>src\hook</Filter>
     </ClCompile>
     <ClCompile Include="src\hook\udp.cpp">

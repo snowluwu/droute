@@ -11,6 +11,7 @@ namespace droute {
         HKEY hKey = nullptr;
         LONG res = RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\droute", 0, KEY_READ, &hKey);
         const bool hasRegistryConfig = res == ERROR_SUCCESS;
+
         if (!hasRegistryConfig)
             LOG_WARN("registry key not found (error=%ld), using defaults", res);
 
@@ -20,11 +21,13 @@ namespace droute {
 
             DWORD type = 0;
             DWORD size = 0;
-            if (RegQueryValueExA(hKey, name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS || type != REG_SZ || size == 0)
+            if (RegQueryValueExA(hKey, name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS || type != REG_SZ ||
+                size == 0)
                 return false;
 
             std::vector<char> buf(size + 1, '\0');
-            if (RegQueryValueExA(hKey, name, nullptr, &type, reinterpret_cast<LPBYTE>(buf.data()), &size) != ERROR_SUCCESS)
+            if (RegQueryValueExA(hKey, name, nullptr, &type, reinterpret_cast<LPBYTE>(buf.data()), &size) !=
+                ERROR_SUCCESS)
                 return false;
 
             out.assign(buf.data(), strnlen_s(buf.data(), size));
@@ -35,7 +38,8 @@ namespace droute {
             if (!hasRegistryConfig)
                 return false;
             DWORD type = 0, val = 0, size = sizeof(val);
-            if (RegQueryValueExA(hKey, name, nullptr, &type, (LPBYTE)&val, &size) == ERROR_SUCCESS && type == REG_DWORD) {
+            if (RegQueryValueExA(hKey, name, nullptr, &type, (LPBYTE)&val, &size) == ERROR_SUCCESS &&
+                type == REG_DWORD) {
                 out = val;
                 return true;
             }
@@ -47,6 +51,7 @@ namespace droute {
             host = "127.0.0.1";
             LOG_WARN("proxy host is empty, using default %s", host.c_str());
         }
+
         uint32_t portTmp = port;
         if (ReadDword("Port", portTmp)) {
             if (portTmp > 0 && portTmp <= UINT16_MAX) {
@@ -55,17 +60,22 @@ namespace droute {
                 LOG_WARN("invalid proxy port %u, using default %u", portTmp, port);
             }
         }
+
         ReadString("User", user);
         ReadString("Password", password);
 
         uint32_t tmp;
         if (ReadDword("ConnectTimeout", tmp)) {
-            if (tmp > 0 && tmp <= INT_MAX) connectTimeout = tmp;
-            else LOG_WARN("invalid ConnectTimeout=%u, using default %u", tmp, connectTimeout);
+            if (tmp >= 100 && tmp <= INT_MAX)
+                connectTimeout = tmp;
+            else
+                LOG_WARN("invalid ConnectTimeout=%u, using default %u", tmp, connectTimeout);
         }
         if (ReadDword("ReconnectInterval", tmp)) {
-            if (tmp > 0) reconnectInterval = tmp;
-            else LOG_WARN("invalid ReconnectInterval=0, using default %u", reconnectInterval);
+            if (tmp >= 100 && tmp <= INT_MAX)
+                reconnectInterval = tmp;
+            else
+                LOG_WARN("invalid ReconnectInterval=%u, using default %u", tmp, reconnectInterval);
         }
         if (ReadDword("LogLevel", tmp)) {
             if (tmp <= static_cast<uint32_t>(LogLevel::Error)) {
@@ -78,37 +88,71 @@ namespace droute {
         if (hKey)
             RegCloseKey(hKey);
 
-        memset(&g_proxyAddr, 0, sizeof(g_proxyAddr));
+        g_proxyAddr = {};
         g_proxyAddr.sin_family = AF_INET;
-        g_proxyAddr.sin_port = htons(static_cast<uint16_t>(port));
+        g_proxyAddr.sin_port = htons(port);
 
-        if (inet_pton(AF_INET, host.c_str(), &g_proxyAddr.sin_addr) == 1) {
-        } else {
-            addrinfo hints = {};
-            hints.ai_family = AF_INET;
-            hints.ai_socktype = SOCK_STREAM;
-            addrinfo* result = nullptr;
-            const int gaiError = getaddrinfo(host.c_str(), nullptr, &hints, &result);
-            if (gaiError == 0 && result) {
-                g_proxyAddr.sin_addr = reinterpret_cast<sockaddr_in*>(result->ai_addr)->sin_addr;
-                freeaddrinfo(result);
-            } else {
-                LOG_ERROR("failed to resolve '%s': %d; using 127.0.0.1", host.c_str(), gaiError);
-                inet_pton(AF_INET, "127.0.0.1", &g_proxyAddr.sin_addr);
-            }
+        if (inet_pton(AF_INET, host.c_str(), &g_proxyAddr.sin_addr) != 1)
+            g_proxyAddr.sin_addr.s_addr = INADDR_NONE;
+
+        const char* authState = "set";
+        if (user.empty() && password.empty()) {
+            authState = "none";
+        } else if (user.empty() || password.empty()) {
+            authState = "incomplete";
+            LOG_WARN("proxy credentials are incomplete; authentication is disabled");
         }
 
-        const char* authState = user.empty() && password.empty()
-            ? "none"
-            : (!user.empty() && !password.empty() ? "set" : "incomplete");
-        if (strcmp(authState, "incomplete") == 0)
-            LOG_WARN("proxy credentials are incomplete; authentication is disabled");
+        LOG_INFO("config source=%s proxy=%s:%u auth=%s connect_timeout_ms=%u reconnect_interval_ms=%u log_level=%s",
+                 hasRegistryConfig ? "registry" : "defaults", host.c_str(), port, authState, connectTimeout,
+                 reconnectInterval, LevelToString(logLevel));
 
-        LOG_INFO("config source=%s proxy=%s auth=%s connect_timeout_ms=%u reconnect_interval_ms=%u log_level=%s",
-                 hasRegistryConfig ? "registry" : "defaults",
-                 AddrToString(g_proxyAddr).c_str(),
-                 authState, connectTimeout, reconnectInterval, LevelToString(logLevel));
         return hasRegistryConfig;
+    }
+
+    static INIT_ONCE g_resolveOnce = INIT_ONCE_STATIC_INIT;
+    static sockaddr_in g_resolvedProxy = {};
+    static thread_local bool g_resolvingProxy = false;
+
+    bool IsResolvingProxy() {
+        return g_resolvingProxy;
+    }
+
+    static BOOL CALLBACK ResolveProxy(PINIT_ONCE, void*, void**) {
+        g_resolvingProxy = true;
+
+        struct ResolveScope {
+            ~ResolveScope() {
+                g_resolvingProxy = false;
+            }
+        } scope;
+
+        addrinfo hints = {};
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        addrinfo* result = nullptr;
+        int error = getaddrinfo(g_cfg.host.c_str(), nullptr, &hints, &result);
+        if (error || !result) {
+            LOG_ERROR("failed to resolve proxy host '%s': %d", g_cfg.host.c_str(), error);
+            return FALSE;
+        }
+        g_resolvedProxy = g_proxyAddr;
+        g_resolvedProxy.sin_addr = reinterpret_cast<sockaddr_in*>(result->ai_addr)->sin_addr;
+        freeaddrinfo(result);
+        return TRUE;
+    }
+
+    bool GetProxyAddress(sockaddr_in& address) {
+        if (g_proxyAddr.sin_addr.s_addr != INADDR_NONE) {
+            address = g_proxyAddr;
+            return true;
+        }
+        if (!InitOnceExecuteOnce(&g_resolveOnce, ResolveProxy, nullptr, nullptr)) {
+            WSASetLastError(WSAHOST_NOT_FOUND);
+            return false;
+        }
+        address = g_resolvedProxy;
+        return true;
     }
 
 }

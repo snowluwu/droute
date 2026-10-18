@@ -1,4 +1,4 @@
-﻿using Droute.Core;
+using Droute.Core;
 using Droute.Installer.Classes;
 using Droute.Installer.Properties;
 using System;
@@ -8,16 +8,27 @@ using System.Windows.Forms;
 
 namespace Droute.Installer.Forms
 {
-    public partial class FrmMain : Form
+    public partial class MainForm : Form
     {
-        private Config _cfg = null;
-        private DiscordManager.Branches _selectedBranch = DiscordManager.Branches.Stable;
+        private ProxySettings _cfg = null;
+        private DiscordBranch _selectedBranch = DiscordBranch.Stable;
 
-        public FrmMain()
+        public MainForm()
         {
             InitializeComponent();
 
-            _cfg = new Config();
+            _cfg = new ProxySettings(false);
+            try
+            {
+                _cfg.Load();
+                _cfg.Validate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error on load configuration: \"{ex.Message}\"\nDefault settings will be loaded.", "Error on load configuration",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _cfg = new ProxySettings(false);
+            }
         }
 
         private void authCheckBox_CheckedChanged(object sender, EventArgs e)
@@ -25,9 +36,9 @@ namespace Droute.Installer.Forms
             authPanel.Enabled = authCheckBox.Checked;
         }
 
-        private void FrmMain_Load(object sender, EventArgs e)
+        private void MainForm_Load(object sender, EventArgs e)
         {
-            #region [ Set values from Registry Config ]
+            #region [ proxy settings ]
 
             hostTextBox.Text = _cfg.Host;
             portNumeric.Value = _cfg.Port;
@@ -41,24 +52,24 @@ namespace Droute.Installer.Forms
 
             this.LoadDiscordActionSettings();
 
-            #region [ Set Version (aboutTab) ]
+            #region [ version ]
 
             var versionInfo = new Version(Application.ProductVersion);
             versionLabel.Text = $"v. {versionInfo.Major}.{versionInfo.Minor}.{versionInfo.Build}";
 
             #endregion
 
-            #region [ Load Branches ]
+            #region [ discord branches ]
 
             branchesComboBox.Items.Clear();
             branchesComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
 
-            var availableBranches = DiscordManager.GetInstalledBranches();
+            var availableBranches = Discord.GetInstalledBranches();
             if (availableBranches.Count == 0)
             {
-                branchesComboBox.Items.Add(DiscordManager.Branches.Stable);
+                branchesComboBox.Items.Add(DiscordBranch.Stable);
                 branchesComboBox.SelectedIndex = 0;
-                _selectedBranch = DiscordManager.Branches.Stable;
+                _selectedBranch = DiscordBranch.Stable;
                 return;
             }
 
@@ -75,14 +86,16 @@ namespace Droute.Installer.Forms
         private void applyCfgButton_Click(object sender, EventArgs e)
         {
             _selectedBranch = GetSelectedBranch();
-            bool restartDiscord = Settings.Default.AutoRestartConfig && DiscordManager.IsDiscordRunning(_selectedBranch);
+            bool restartDiscord = Settings.Default.AutoRestartConfig && Discord.IsRunning(_selectedBranch);
 
-            this.ApplyConfig();
+            if (!this.SaveSettings())
+                return;
 
             if (restartDiscord)
                 this.RestartDiscord(_selectedBranch);
 
-            MessageBox.Show("Config has been applied!", "Droute: apply changes", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Config has been applied!",
+                "Droute: apply changes", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void discordActionsCheckbox_CheckedChanged(object sender, EventArgs e)
@@ -114,6 +127,7 @@ namespace Droute.Installer.Forms
                 string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 if (string.IsNullOrEmpty(localAppData))
                     throw new DirectoryNotFoundException("LocalAppData is unavailable.");
+
                 string branch = GetSelectedBranch().ToString().ToLowerInvariant();
                 string path = Path.Combine(localAppData, "droute", "logs", branch);
                 Directory.CreateDirectory(path);
@@ -129,34 +143,45 @@ namespace Droute.Installer.Forms
 
         private void installPatchButton_Click(object sender, EventArgs e)
         {
-            this.ApplyConfig();
-            this.HandleAction(FrmPatch.PatchAction.Install);
+            if (!this.SaveSettings())
+                return;
+
+            this.HandleAction(PatchForm.PatchAction.Install);
         }
 
-        private void removePatchButton_Click(object sender, EventArgs e) 
-            => this.HandleAction(FrmPatch.PatchAction.Remove);
+        private void removePatchButton_Click(object sender, EventArgs e)
+            => this.HandleAction(PatchForm.PatchAction.Uninstall);
 
-        private void ApplyConfig()
+        private bool SaveSettings()
         {
-            _cfg.Host = hostTextBox.Text.Trim();
-            _cfg.Port = (int)portNumeric.Value;
-            _cfg.User = authCheckBox.Checked ? userTextBox.Text : string.Empty;
-            _cfg.Password = authCheckBox.Checked ? passwordTextBox.Text : string.Empty;
-            _cfg.Apply();
+            try
+            {
+                _cfg.Host = hostTextBox.Text.Trim();
+                _cfg.Port = (int)portNumeric.Value;
+                _cfg.User = authCheckBox.Checked ? userTextBox.Text : string.Empty;
+                _cfg.Password = authCheckBox.Checked ? passwordTextBox.Text : string.Empty;
+                _cfg.Save();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Droute: configuration", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
         }
 
-        private void HandleAction(FrmPatch.PatchAction action)
+        private void HandleAction(PatchForm.PatchAction action)
         {
             _selectedBranch = this.GetSelectedBranch();
 
-            bool restartDiscord = action == FrmPatch.PatchAction.Install &&
+            bool restartDiscord = action == PatchForm.PatchAction.Install &&
                 Settings.Default.AutoRestartPatch &&
-                DiscordManager.IsDiscordRunning(_selectedBranch);
+                Discord.IsRunning(_selectedBranch);
 
             if (Settings.Default.AutoRestartPatch && !this.CloseDiscord(_selectedBranch))
                 return;
 
-            using (var frm = new FrmPatch(action, _selectedBranch))
+            using (var frm = new PatchForm(action, _selectedBranch))
             {
                 frm.ShowDialog();
 
@@ -177,25 +202,25 @@ namespace Droute.Installer.Forms
             autoRestartConfigCheckbox.CheckedChanged += discordActionsCheckbox_CheckedChanged;
         }
 
-        private DiscordManager.Branches GetSelectedBranch()
+        private DiscordBranch GetSelectedBranch()
         {
-            if (branchesComboBox.SelectedItem is DiscordManager.Branches branch)
+            if (branchesComboBox.SelectedItem is DiscordBranch branch)
                 return branch;
 
-            return DiscordManager.Branches.Stable;
+            return DiscordBranch.Stable;
         }
 
-        private void RestartDiscord(DiscordManager.Branches branch)
+        private void RestartDiscord(DiscordBranch branch)
         {
             if (this.CloseDiscord(branch))
                 this.LaunchDiscord(branch);
         }
 
-        private bool CloseDiscord(DiscordManager.Branches branch)
+        private bool CloseDiscord(DiscordBranch branch)
         {
             try
             {
-                if (DiscordTools.CloseWait(branch))
+                if (Discord.KillAndWait(branch))
                     return true;
 
                 MessageBox.Show("Discord did not exit in time. Close it manually and try again.",
@@ -204,17 +229,18 @@ namespace Droute.Installer.Forms
             catch (Exception ex)
             {
                 Trace.WriteLine($"error during Discord shutdown: {ex}");
-                MessageBox.Show(ex.Message, "Unable to close Discord", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show($"Unable to close Discord {branch}.\nError: \"{ex.Message}\"",
+                    "Unable to close Discord", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
 
             return false;
         }
 
-        private void LaunchDiscord(DiscordManager.Branches branch)
+        private void LaunchDiscord(DiscordBranch branch)
         {
             try
             {
-                DiscordManager.Launch(branch);
+                Discord.Launch(branch);
             }
             catch (Exception ex)
             {
@@ -225,18 +251,20 @@ namespace Droute.Installer.Forms
 
         private void resetCfgBtn_Click(object sender, EventArgs e)
         {
-            DialogResult result = MessageBox.Show
-            (
-                "Droute settings will be deleted from registry. At the same time, patch itself will not be affected.", 
-                "Are you sure?", 
-                MessageBoxButtons.YesNo, 
-                MessageBoxIcon.Warning
-            );
+            DialogResult result = MessageBox.Show("Droute settings will be deleted from registry. At the same time, patch itself will not be affected.",
+                "Are you sure?", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
             if (result == DialogResult.Yes)
             {
-                _cfg.Reset();
-                Application.Restart();
+                try
+                {
+                    _cfg.Reset();
+                    Application.Restart();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Droute: configuration", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
     }

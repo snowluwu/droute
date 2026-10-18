@@ -85,13 +85,13 @@ List available options:
 
 ## How It Works
 
-### Loading the Main Library
+### Main library
 
 The installer copies `version.dll` from the Windows `System32` folder to the selected Discord `app-*` folder. It adds `droute.dll` to the import table of this copy and places `droute.dll` in the same folder.
 
 When Discord loads the local `version.dll`, Windows also loads `droute.dll`. This is the main Droute library: it uses MinHook to intercept Winsock calls and send connections through SOCKS5. The original system DLL and Discord executable are not changed.
 
-### Applying Droute After Updates
+### Applying after updates
 
 The installer places `Droute.UpdaterHook.dll` and `Update.exe.config` in the same folder as Discord's `Update.exe`. The config file tells the updater to load the hook. Before Discord starts, the hook finds the latest `app-*` folder and installs `version.dll` and `droute.dll` if they are missing.
 
@@ -111,22 +111,3 @@ Include your Droute version, Discord build, proxy software and what went wrong. 
 
 - Logs include session IDs (`SESSION`), process PIDs, and connection generations (`generation`) to help trace traffic flows.
 - Proxy usernames/passwords, packet contents and command-line arguments are **not logged**.
-
----
-
-## Custom Integrations
-
-Use `external-libs.zip` to install or remove Droute from your own launcher, script or installer through the `Droute.Core` public API.
-
-| File | Purpose |
-| --- | --- |
-| `Droute.Core.dll` | Finds Discord installations and installs or removes Droute. |
-| `AsmResolver*.dll` | Libraries for reading and modifying PE files. |
-| `MonoMod*.dll` | Libraries for .NET runtime compatibility. |
-| `droute.dll` | Main x64 library that proxies Discord connections. |
-| `Droute.UpdaterHook.dll` | Applies Droute after updates; includes its dependencies and `droute.dll`. |
-| `Update.exe.config` | Loads the hook through Discord's `Update.exe`. |
-
-- Keep the dependency DLLs in the same folder as `Droute.Core.dll`. Use files from the same release. Core targets .NET Framework 4.5.
-- Close Discord before installing or removing Droute. `Install(branch, ...)` installs the main library and updater hook; `Install(appDirectory, ...)` patches only that version.
-- Configure the proxy separately through the installer or `HKCU\Software\droute`. Restart Discord after changes.

@@ -30,7 +30,7 @@
 
 	</Target>
 
-	<Target Name="CopyToInstallerResources" AfterTargets="Build">
+	<Target Name="CopyToInstallerResources" AfterTargets="Build" DependsOnTargets="ILRepacker">
 		<MakeDir Directories="$(MSBuildProjectDirectory)\..\installer\Resources" Condition="!Exists('$(MSBuildProjectDirectory)\..\installer\Resources')" />
 		<Copy SourceFiles="$(OutputPath)$(TargetName)$(TargetExt)" DestinationFolder="$(MSBuildProjectDirectory)\..\installer\Resources" />
 	</Target>

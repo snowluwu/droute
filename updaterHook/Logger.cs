@@ -45,6 +45,7 @@ namespace Droute.UpdaterHook
                 string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 if (string.IsNullOrEmpty(localAppData))
                     throw new DirectoryNotFoundException("LocalAppData is unavailable.");
+
                 _directory = Path.Combine(localAppData, "droute", "logs", branch);
                 using (var sha = SHA256.Create())
                 {
@@ -56,7 +57,8 @@ namespace Droute.UpdaterHook
                     using (var registry = Registry.CurrentUser.OpenSubKey(@"Software\droute"))
                     {
                         object value = registry?.GetValue("LogLevel");
-                        if (value is int && (int)value >= 0 && (int)value <= 4) _level = (int)value;
+                        if (value is int && (int)value >= 0 && (int)value <= 4)
+                            _level = (int)value;
                     }
                 }
                 catch (Exception ex)
@@ -87,7 +89,9 @@ namespace Droute.UpdaterHook
 
         private static void Log(int severity, string level, string message, string file, int line)
         {
-            if (severity < _level) return;
+            if (severity < _level)
+                return;
+
             string record = null;
             bool acquired = false;
             try
@@ -95,16 +99,22 @@ namespace Droute.UpdaterHook
                 lock (Sync)
                 {
                     DateTime now = DateTime.Now;
-                    // keep multiline exceptions in a single log record.
+                    // one record per exception
                     string text = (message ?? "").Replace("\r", "\\r").Replace("\n", "\\n");
                     record = $"[{now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)}] " +
                         $"[PID:{_pid}] [TID:{GetCurrentThreadId()}] [SESSION:{_session}] [UP:{Clock.ElapsedMilliseconds}] " +
                         $"[{level}] [{Path.GetFileName(file)}:{line}] {text}{Environment.NewLine}";
                     if (_writerMutex == null || string.IsNullOrEmpty(_directory))
                         throw new InvalidOperationException("Log writer was not initialized.");
-                    try { acquired = _writerMutex.WaitOne(1000); }
+
+                    try
+                    {
+                        acquired = _writerMutex.WaitOne(1000);
+                    }
                     catch (AbandonedMutexException) { acquired = true; }
-                    if (!acquired) throw new TimeoutException("Timed out acquiring the shared log writer.");
+                    if (!acquired)
+                        throw new TimeoutException("Timed out acquiring the shared log writer.");
+
                     Directory.CreateDirectory(_directory);
                     string path = Path.Combine(_directory, "updater-" + now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".log");
                     byte[] bytes = Encoding.UTF8.GetBytes(record);
@@ -119,13 +129,17 @@ namespace Droute.UpdaterHook
             catch (Exception ex)
             {
                 System.Diagnostics.Trace.WriteLine("droute updater log write failed: " + ex);
-                if (record != null) System.Diagnostics.Trace.WriteLine(record);
+                if (record != null)
+                    System.Diagnostics.Trace.WriteLine(record);
             }
             finally
             {
                 if (acquired)
                 {
-                    try { _writerMutex.ReleaseMutex(); }
+                    try
+                    {
+                        _writerMutex.ReleaseMutex();
+                    }
                     catch (Exception ex) { System.Diagnostics.Trace.WriteLine("droute updater log unlock failed: " + ex); }
                 }
             }

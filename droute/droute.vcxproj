@@ -105,13 +105,14 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="src\exports.hpp" />
+    <ClInclude Include="src\dllmain.hpp" />
     <ClInclude Include="src\core\config.hpp" />
     <ClInclude Include="src\core\logger.hpp" />
     <ClInclude Include="src\core\utils.hpp" />
     <ClInclude Include="src\net\socks5.hpp" />
     <ClInclude Include="src\hook\hooks.hpp" />
     <ClInclude Include="src\hook\tcp.hpp" />
+    <ClInclude Include="src\hook\async.hpp" />
     <ClInclude Include="src\hook\udp.hpp" />
     <ClInclude Include="src\hook\process.hpp" />
   </ItemGroup>
@@ -120,13 +121,14 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="src\exports.cpp" />
+    <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\core\config.cpp" />
     <ClCompile Include="src\core\logger.cpp" />
     <ClCompile Include="src\core\utils.cpp" />
     <ClCompile Include="src\net\socks5.cpp" />
     <ClCompile Include="src\hook\hooks.cpp" />
     <ClCompile Include="src\hook\tcp.cpp" />
+    <ClCompile Include="src\hook\async.cpp" />
     <ClCompile Include="src\hook\udp.cpp" />
     <ClCompile Include="src\hook\process.cpp" />
   </ItemGroup>
