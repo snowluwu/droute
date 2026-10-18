@@ -1,4 +1,5 @@
 using CommandLine;
+using CommandLine.Text;
 using Droute.Core;
 using Droute.Installer.Classes;
 using Droute.Installer.Forms;
@@ -60,9 +61,12 @@ namespace Droute.Installer
 
                 #endregion
 
-                Parser.Default.ParseArguments<CliOptions>(NormalizeCliArguments(args))
-                    .WithParsed(CliActions)
-                    .WithNotParsed(OnCliError);
+                using (var parser = new Parser(settings => settings.HelpWriter = null))
+                {
+                    var result = parser.ParseArguments<CliOptions>(NormalizeCliArguments(args));
+                    result.WithParsed(CliActions)
+                        .WithNotParsed(errors => OnCliError(result, errors));
+                }
 
                 Console.ResetColor();
                 return;
@@ -122,8 +126,20 @@ namespace Droute.Installer
             }
         }
 
-        private static void OnCliError(IEnumerable<Error> errors)
+        private static void OnCliError(ParserResult<CliOptions> result, IEnumerable<Error> errors)
         {
+            if (!errors.Any(error => error is VersionRequestedError))
+            {
+                var help = HelpText.AutoBuild(result, text =>
+                {
+                    text.Heading = string.Empty;
+                    text.Copyright = string.Empty;
+                    return HelpText.DefaultParsingErrorsHandler(result, text);
+                }, example => example);
+
+                Console.WriteLine(help);
+            }
+
             bool helpRequested = errors.Any(error =>
                 error is HelpRequestedError || error is VersionRequestedError);
 
