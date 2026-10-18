@@ -47,7 +47,7 @@ namespace droute {
                     }
                     pending = association.status == UdpAssociation::Status::PendingAssociate;
                     const uint64_t now = GetTickCount64();
-                    if (association.status != UdpAssociation::Status::Idle &&
+                    if (Logger::Enabled(LogLevel::Debug) && association.status != UdpAssociation::Status::Idle &&
                         now - association.lastSummaryAt >= 10000) {
                         summary = association;
                         association.reportedTx = association.txPackets;

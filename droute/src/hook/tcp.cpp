@@ -111,7 +111,7 @@ namespace droute {
             g_tcpConnections[s] = {connection, startedAt};
         }
 
-        LOG_INFO("event=tcp.connect.start connection=%llu socket=%llu destination=%s proxy=%s mode=%s timeout_ms=%u",
+        LOG_DEBUG("event=tcp.connect.start connection=%llu socket=%llu destination=%s proxy=%s mode=%s timeout_ms=%u",
                  connection, (ULONG_PTR)s, target.c_str(), FormatAddress(g_proxyAddr).c_str(),
                  wasNonBlocking ? "nonblocking" : "blocking", g_cfg.connectTimeout);
 
@@ -145,7 +145,7 @@ namespace droute {
 
         const uint64_t elapsed = GetTickCount64() - startedAt;
 
-        LOG_INFO("event=tcp.connect.ready connection=%llu socket=%llu destination=%s mode=blocking elapsed_ms=%llu "
+        LOG_DEBUG("event=tcp.connect.ready connection=%llu socket=%llu destination=%s mode=blocking elapsed_ms=%llu "
                  "application_result=success",
                  connection, (ULONG_PTR)s, target.c_str(), elapsed);
 

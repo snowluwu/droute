@@ -133,7 +133,7 @@ namespace droute {
             Real_eventSelect(connection->socket, connection->event, connection->events & ~FD_CONNECT);
 
         NotifyConnection(*connection);
-        DROUTE_LOG(connection->error ? LogLevel::Warn : LogLevel::Info,
+        DROUTE_LOG(connection->error ? LogLevel::Warn : LogLevel::Debug,
                    "event=tcp.connect.completed socket=%llu error=%d elapsed_ms=%llu", (ULONG_PTR)connection->socket,
                    connection->error, GetTickCount64() - started);
     }

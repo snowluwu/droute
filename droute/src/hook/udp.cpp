@@ -53,9 +53,8 @@ namespace droute {
 
     static void LogUdpAssociationStart(SOCKET s, const UdpAssociation& a, const char* trigger) {
         Logger::ErrorScope preserveError;
-        const LogLevel level = a.attempts == 1 || a.lastAssociationError == 0 ? LogLevel::Info : LogLevel::Debug;
-        DROUTE_LOG(level, "event=udp.associate.start flow=%llu socket=%llu attempt=%llu trigger=%s proxy=%s", a.flowId,
-                   (ULONG_PTR)s, a.attempts, trigger, FormatAddress(g_proxyAddr).c_str());
+        LOG_DEBUG("event=udp.associate.start flow=%llu socket=%llu attempt=%llu trigger=%s proxy=%s", a.flowId,
+                  (ULONG_PTR)s, a.attempts, trigger, FormatAddress(g_proxyAddr).c_str());
     }
 
     static void LogUdpAssociationResult(SOCKET s, const UdpAssociation& a, bool ok, int error, const char* stage) {
@@ -81,7 +80,7 @@ namespace droute {
     void LogUdpSummary(SOCKET s, UdpAssociation& a, const char* event) {
         Logger::ErrorScope preserveError;
         const uint64_t now = GetTickCount64();
-        LOG_INFO("event=%s flow=%llu socket=%llu state=%s generation=%llu attempts=%llu control=%llu relay=%s "
+        LOG_DEBUG("event=%s flow=%llu socket=%llu state=%s generation=%llu attempts=%llu control=%llu relay=%s "
                  "destination=%s lifetime_ms=%llu interval_ms=%llu tx_packets=%llu rx_packets=%llu tx_bytes=%llu "
                  "rx_bytes=%llu interval_tx=%llu interval_rx=%llu tx_age_ms=%lld rx_age_ms=%lld pending_io=%llu "
                  "io_errors=%llu would_block=%llu blocked_sends=%llu last_io_error=%d last_associate_error=%d "
@@ -123,7 +122,7 @@ namespace droute {
         observation.generation = a.generation;
         if (destination && !IsSameAddr(*destination, a.destination)) {
             a.destination = *destination;
-            LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", a.flowId, (ULONG_PTR)s,
+            LOG_DEBUG("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", a.flowId, (ULONG_PTR)s,
                      FormatAddress(*destination).c_str(), api);
         }
     }
@@ -170,7 +169,7 @@ namespace droute {
             lastAt = now;
             if (observation.generation == a.generation && firstGeneration != a.generation) {
                 firstGeneration = a.generation;
-                LOG_INFO(
+                LOG_DEBUG(
                     "event=udp.io.first flow=%llu socket=%llu generation=%llu direction=%s api=%s bytes=%lu source=%s",
                     a.flowId, (ULONG_PTR)s, a.generation, direction, observation.api, bytes,
                     source ? FormatAddress(*source).c_str() : "none");
@@ -552,7 +551,7 @@ namespace droute {
         sockaddr_in local = {};
         int size = sizeof(local);
         const bool hasLocal = getsockname(s, reinterpret_cast<sockaddr*>(&local), &size) == 0;
-        LOG_INFO("event=udp.track flow=%llu socket=%llu local=%s mode=%s", association.flowId, (ULONG_PTR)s,
+        LOG_DEBUG("event=udp.track flow=%llu socket=%llu local=%s mode=%s", association.flowId, (ULONG_PTR)s,
                  hasLocal ? FormatAddress(local).c_str() : "unknown",
                  g_nonBlockingSockets.count(s) ? "nonblocking" : "blocking");
     }
@@ -769,7 +768,7 @@ namespace droute {
 
         if (!IsSameAddr(destination, it->second.destination)) {
             it->second.destination = destination;
-            LOG_INFO("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", it->second.flowId,
+            LOG_DEBUG("event=udp.destination flow=%llu socket=%llu destination=%s api=%s", it->second.flowId,
                      (ULONG_PTR)s, FormatAddress(destination).c_str(), api);
         }
 
@@ -1640,7 +1639,7 @@ namespace droute {
         const int result = Hooks::Real_closesocket(s);
         if (flow || tcp.id) {
             const int error = result == SOCKET_ERROR ? WSAGetLastError() : 0;
-            const LogLevel level = error ? LogLevel::Warn : LogLevel::Info;
+            const LogLevel level = error ? LogLevel::Warn : LogLevel::Debug;
             DROUTE_LOG(
                 level,
                 "event=socket.close flow=%llu connection=%llu socket=%llu result=%d wsa_error=%d lifetime_ms=%llu",
