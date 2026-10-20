@@ -206,7 +206,6 @@ namespace droute {
         sockaddr_storage receivedFrom = {};
         int receivedFromLength = sizeof(receivedFrom);
 
-        LPDWORD applicationFlags = nullptr;
         DWORD receiveFlags = 0;
 
         sockaddr_in relayAtStart = {};
@@ -467,8 +466,6 @@ namespace droute {
             }
             memcpy(operation.applicationFrom, sourceAddress, sourceLength);
         }
-        if (operation.applicationFlags)
-            *operation.applicationFlags = operation.receiveFlags;
 
         if (static_cast<DWORD>(payloadLength) > available) {
             operation.completionError = WSAEMSGSIZE;
@@ -485,12 +482,13 @@ namespace droute {
         std::lock_guard<std::mutex> lock(g_udpIoMutex);
         auto existing = g_udpIoOperations.find(operation->overlapped);
         if (existing != g_udpIoOperations.end()) {
-            std::lock_guard<std::mutex> completionLock(existing->second->completionMutex);
-            if (!existing->second->processed) {
+            auto previous = existing->second;
+            std::lock_guard<std::mutex> completionLock(previous->completionMutex);
+            if (!previous->processed) {
                 LOG_WARN("event=udp.io.overlapped_reused flow=%llu socket=%llu overlapped=%p previous_flow=%llu "
                          "previous_socket=%llu",
                          operation->observation.flowId, (ULONG_PTR)operation->socket, operation->overlapped,
-                         existing->second->observation.flowId, (ULONG_PTR)existing->second->socket);
+                         previous->observation.flowId, (ULONG_PTR)previous->socket);
                 WSASetLastError(WSAEINVAL);
                 return false;
             }
@@ -1416,7 +1414,6 @@ namespace droute {
         operation->applicationFrom = lpFrom;
         operation->applicationFromLength = lpFromlen;
         operation->applicationFromCapacity = lpFrom && lpFromlen ? *lpFromlen : 0;
-        operation->applicationFlags = lpFlags;
         operation->receiveFlags = lpFlags ? *lpFlags : 0;
         operation->buffer.resize(static_cast<size_t>(applicationBufferSize) + Socks5::UdpMaxHeaderSize);
         operation->hasRelayAtStart = TryGetUdpRelay(s, operation->relayAtStart);
@@ -1437,6 +1434,8 @@ namespace droute {
 
         if (status == 0) {
             UdpCompletion completion = CompleteUdpIo(*operation, 0, *bytesReceived);
+            if (lpFlags)
+                *lpFlags = operation->receiveFlags;
             if (lpNumberOfBytesRecvd)
                 *lpNumberOfBytesRecvd = completion.bytes;
             if (completion.error != 0) {
@@ -1445,6 +1444,8 @@ namespace droute {
             }
         } else if (error != WSA_IO_PENDING) {
             UdpCompletion completion = CompleteUdpIo(*operation, error, 0);
+            if (lpFlags && error == WSAEMSGSIZE)
+                *lpFlags = operation->receiveFlags;
             if (lpNumberOfBytesRecvd)
                 *lpNumberOfBytesRecvd = completion.bytes;
             if (lpOverlapped)
