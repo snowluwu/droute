@@ -206,8 +206,11 @@ namespace droute {
         sockaddr_storage receivedFrom = {};
         int receivedFromLength = sizeof(receivedFrom);
 
-        LPDWORD applicationFlags = nullptr;
         DWORD receiveFlags = 0;
+        WSAOVERLAPPED nativeReceive = {};
+        HANDLE receiveEvent = nullptr;
+        std::mutex receiveMutex;
+        bool receivePending = false;
 
         sockaddr_in relayAtStart = {};
         bool hasRelayAtStart = false;
@@ -231,6 +234,8 @@ namespace droute {
         sockaddr_in destination = {};
 
         ~UdpIoOperation() {
+            if (receiveEvent)
+                CloseHandle(receiveEvent);
             if (completedEvent)
                 CloseHandle(completedEvent);
             if (callerThread)
@@ -247,7 +252,8 @@ namespace droute {
     static std::map<LPWSAOVERLAPPED, std::shared_ptr<UdpIoOperation>> g_udpIoOperations;
     static std::shared_ptr<UdpIoOperation> TakeUdpIo(LPWSAOVERLAPPED overlapped);
 
-    static bool QueuedResult(LPWSAOVERLAPPED overlapped, DWORD timeout, BOOL alertable, LPDWORD bytes, BOOL& result) {
+    static bool QueuedResult(LPWSAOVERLAPPED overlapped, DWORD timeout, BOOL alertable, LPDWORD bytes, BOOL& result,
+                             LPDWORD flags = nullptr) {
         std::shared_ptr<UdpIoOperation> operation;
         {
             std::lock_guard<std::mutex> lock(g_udpIoMutex);
@@ -277,6 +283,8 @@ namespace droute {
             std::lock_guard<std::mutex> lock(operation->completionMutex);
             if (bytes)
                 *bytes = operation->completedBytes;
+            if (flags)
+                *flags = operation->receiveFlags;
             result = operation->completionError == 0;
         }
         if (!operation->completionRoutine && !operation->completionPacketExpected)
@@ -467,8 +475,6 @@ namespace droute {
             }
             memcpy(operation.applicationFrom, sourceAddress, sourceLength);
         }
-        if (operation.applicationFlags)
-            *operation.applicationFlags = operation.receiveFlags;
 
         if (static_cast<DWORD>(payloadLength) > available) {
             operation.completionError = WSAEMSGSIZE;
@@ -485,12 +491,13 @@ namespace droute {
         std::lock_guard<std::mutex> lock(g_udpIoMutex);
         auto existing = g_udpIoOperations.find(operation->overlapped);
         if (existing != g_udpIoOperations.end()) {
-            std::lock_guard<std::mutex> completionLock(existing->second->completionMutex);
-            if (!existing->second->processed) {
+            auto previous = existing->second;
+            std::lock_guard<std::mutex> completionLock(previous->completionMutex);
+            if (!previous->processed) {
                 LOG_WARN("event=udp.io.overlapped_reused flow=%llu socket=%llu overlapped=%p previous_flow=%llu "
                          "previous_socket=%llu",
                          operation->observation.flowId, (ULONG_PTR)operation->socket, operation->overlapped,
-                         existing->second->observation.flowId, (ULONG_PTR)existing->second->socket);
+                         previous->observation.flowId, (ULONG_PTR)previous->socket);
                 WSASetLastError(WSAEINVAL);
                 return false;
             }
@@ -536,6 +543,20 @@ namespace droute {
         if (operation->completionRoutine) {
             operation->completionRoutine(static_cast<DWORD>(completion.error), completion.bytes, overlapped, flags);
         }
+    }
+
+    static bool BindUdpSocket(SOCKET s) {
+        std::lock_guard<std::shared_mutex> lock(g_stateMutex);
+        sockaddr_in local = {};
+        int size = sizeof(local);
+        if (getsockname(s, reinterpret_cast<sockaddr*>(&local), &size) == 0)
+            return true;
+        if (WSAGetLastError() != WSAEINVAL)
+            return false;
+
+        local = {};
+        local.sin_family = AF_INET;
+        return Hooks::Real_bind(s, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) == 0;
     }
 
     static void TrackUdpSocket(SOCKET s) {
@@ -881,15 +902,8 @@ namespace droute {
             return result;
         }
 
-        sockaddr_in local = {};
-        int size = sizeof(local);
-        if (getsockname(socket, reinterpret_cast<sockaddr*>(&local), &size) != 0) {
-            if (WSAGetLastError() != WSAEINVAL)
-                return SOCKET_ERROR;
-            local.sin_family = AF_INET;
-            if (Hooks::Real_bind(socket, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) != 0)
-                return SOCKET_ERROR;
-        }
+        if (!BindUdpSocket(socket))
+            return SOCKET_ERROR;
         TrackUdpSocket(socket);
         const auto peer = *reinterpret_cast<const sockaddr_in*>(address);
         {
@@ -919,10 +933,11 @@ namespace droute {
             reinterpret_cast<std::shared_ptr<UdpIoOperation>*>(context));
         auto operation = *owner;
         TakeUdpIo(operation->overlapped);
-        operation->completionRoutine(operation->completionError, operation->completedBytes, operation->overlapped, 0);
+        operation->completionRoutine(operation->completionError, operation->completedBytes, operation->overlapped,
+                                     operation->receiveFlags);
     }
 
-    static void FinishQueuedSend(const std::shared_ptr<UdpIoOperation>& operation, int error, DWORD bytes) {
+    static void FinishQueuedIo(const std::shared_ptr<UdpIoOperation>& operation, int error, DWORD bytes) {
         if (operation->notified.exchange(true))
             return;
         UdpCompletion completion = CompleteUdpIo(*operation, error, bytes, "send_queue");
@@ -953,6 +968,86 @@ namespace droute {
         }
     }
 
+    static void CALLBACK ReceiveCompleted(PTP_CALLBACK_INSTANCE, void* context, PTP_WAIT wait, TP_WAIT_RESULT) {
+        std::unique_ptr<std::shared_ptr<UdpIoOperation>> owner(
+            static_cast<std::shared_ptr<UdpIoOperation>*>(context));
+        auto operation = *owner;
+        CloseThreadpoolWait(wait);
+
+        DWORD bytes = 0;
+        int error;
+        {
+            std::lock_guard<std::mutex> lock(operation->receiveMutex);
+            BOOL result = Hooks::Real_WSAGetOverlappedResult(operation->socket, &operation->nativeReceive, &bytes,
+                                                            FALSE, &operation->receiveFlags);
+            error = result ? 0 : WSAGetLastError();
+            if (error == WSAENOTSOCK) {
+                result = Hooks::Real_GetOverlappedResult(reinterpret_cast<HANDLE>(operation->socket),
+                                                         &operation->nativeReceive, &bytes, FALSE);
+                error = result ? 0 : static_cast<int>(GetLastError());
+            }
+            operation->receivePending = false;
+        }
+        FinishQueuedIo(operation, error, bytes);
+    }
+
+    static int BeginUdpReceive(const std::shared_ptr<UdpIoOperation>& operation) {
+        operation->queued = true;
+        operation->receiveEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        operation->completedEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!operation->receiveEvent || !operation->completedEvent ||
+            (operation->completionRoutine &&
+             !DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &operation->callerThread,
+                              THREAD_SET_CONTEXT, FALSE, 0))) {
+            WSASetLastError(WSAENOBUFS);
+            return SOCKET_ERROR;
+        }
+        auto context = std::make_unique<std::shared_ptr<UdpIoOperation>>(operation);
+        PTP_WAIT wait = CreateThreadpoolWait(ReceiveCompleted, context.get(), nullptr);
+        if (!wait) {
+            WSASetLastError(WSAENOBUFS);
+            return SOCKET_ERROR;
+        }
+
+        // only the decoded packet may signal the application's event or completion port
+        operation->nativeReceive.hEvent =
+            reinterpret_cast<HANDLE>(reinterpret_cast<ULONG_PTR>(operation->receiveEvent) | 1);
+        std::unique_lock<std::mutex> lock(operation->receiveMutex);
+        if (!RegisterUdpIo(operation)) {
+            CloseThreadpoolWait(wait);
+            return SOCKET_ERROR;
+        }
+        operation->overlapped->Internal = 0x103;
+        operation->overlapped->InternalHigh = 0;
+        if (!operation->completionRoutine) {
+            ULONG_PTR event = reinterpret_cast<ULONG_PTR>(operation->overlapped->hEvent) & ~ULONG_PTR(1);
+            if (event)
+                ResetEvent(reinterpret_cast<HANDLE>(event));
+        }
+        WSABUF buffer{static_cast<ULONG>(operation->buffer.size()),
+                      reinterpret_cast<char*>(operation->buffer.data())};
+        DWORD bytes = 0;
+        int result = Hooks::Real_WSARecvFrom(
+            operation->socket, &buffer, 1, &bytes, &operation->receiveFlags,
+            reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength,
+            &operation->nativeReceive, nullptr);
+        int error = result == 0 ? 0 : WSAGetLastError();
+        // keep one completion path, including packets already buffered by winsock
+        if (result == 0 || error == WSA_IO_PENDING) {
+            operation->receivePending = true;
+            context.release();
+            SetThreadpoolWait(wait, operation->receiveEvent, nullptr);
+            WSASetLastError(WSA_IO_PENDING);
+            return SOCKET_ERROR;
+        }
+        lock.unlock();
+        CloseThreadpoolWait(wait);
+        TakeUdpIo(operation->overlapped);
+        CompleteUdpIo(*operation, error, 0);
+        WSASetLastError(error);
+        return SOCKET_ERROR;
+    }
+
     struct SendQueue {
         std::deque<std::shared_ptr<UdpIoOperation>> packets;
         size_t bytes = 0;
@@ -973,7 +1068,7 @@ namespace droute {
             it->second.bytes = 0;
         }
         for (const auto& operation : pending)
-            FinishQueuedSend(operation, error, 0);
+            FinishQueuedIo(operation, error, 0);
     }
 
     static void CALLBACK SendQueueWorker(PTP_CALLBACK_INSTANCE instance, void* context) {
@@ -995,11 +1090,11 @@ namespace droute {
             if (operation->notified.load())
                 continue;
             if (operation->observation.dropped) {
-                FinishQueuedSend(operation, 0, static_cast<DWORD>(operation->buffer.size()));
+                FinishQueuedIo(operation, 0, static_cast<DWORD>(operation->buffer.size()));
                 continue;
             }
             if (!RemainingTimeout(operation->deadline)) {
-                FinishQueuedSend(operation, WSAETIMEDOUT, 0);
+                FinishQueuedIo(operation, WSAETIMEDOUT, 0);
                 continue;
             }
             try {
@@ -1009,24 +1104,24 @@ namespace droute {
                                                        "send_queue", key->flowId, true, operation->deadline);
                 if (status == UdpSendStatus::Unavailable) {
                     operation->observation.dropped = true;
-                    FinishQueuedSend(operation, 0, static_cast<DWORD>(operation->buffer.size()));
+                    FinishQueuedIo(operation, 0, static_cast<DWORD>(operation->buffer.size()));
                     continue;
                 }
                 if (status == UdpSendStatus::Failed) {
                     const int error = WSAGetLastError();
-                    FinishQueuedSend(operation, error, 0);
+                    FinishQueuedIo(operation, error, 0);
                     if (error != WSAETIMEDOUT)
                         FailQueuedSends(*key, error);
                     continue;
                 }
                 operation->controlSocket = control;
                 if (!RemainingTimeout(operation->deadline)) {
-                    FinishQueuedSend(operation, WSAETIMEDOUT, 0);
+                    FinishQueuedIo(operation, WSAETIMEDOUT, 0);
                     continue;
                 }
                 HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
                 if (!event) {
-                    FinishQueuedSend(operation, WSAENOBUFS, 0);
+                    FinishQueuedIo(operation, WSAENOBUFS, 0);
                     continue;
                 }
                 WSAOVERLAPPED overlapped = {};
@@ -1060,9 +1155,9 @@ namespace droute {
                         error = WSAETIMEDOUT;
                 }
                 CloseHandle(event);
-                FinishQueuedSend(operation, error, sent);
+                FinishQueuedIo(operation, error, sent);
             } catch (...) {
-                FinishQueuedSend(operation, WSAENOBUFS, 0);
+                FinishQueuedIo(operation, WSAENOBUFS, 0);
             }
         }
     }
@@ -1107,7 +1202,7 @@ namespace droute {
             if (!TrySubmitThreadpoolCallback(SendQueueWorker, context.get(), nullptr)) {
                 queue.packets.pop_back();
                 queue.bytes -= operation->buffer.size();
-                FinishQueuedSend(operation, WSAENOBUFS, 0);
+                FinishQueuedIo(operation, WSAENOBUFS, 0);
                 g_sendQueues.erase(key);
                 return true;
             }
@@ -1140,19 +1235,33 @@ namespace droute {
         {
             std::lock_guard<std::mutex> lock(g_udpIoMutex);
             for (const auto& entry : g_udpIoOperations)
-                if (entry.second->queued && !entry.second->notified.load() && entry.second->socket == socket &&
+                if (entry.second->queued && entry.second->kind == UdpIoKind::Send &&
+                    !entry.second->notified.load() && entry.second->socket == socket &&
                     (!overlapped || entry.first == overlapped))
                     pending.push_back(entry.second);
         }
         for (const auto& operation : pending)
-            FinishQueuedSend(operation, WSA_OPERATION_ABORTED, 0);
+            FinishQueuedIo(operation, WSA_OPERATION_ABORTED, 0);
         return !pending.empty();
     }
 
     decltype(&CancelIoEx) Real_CancelIoEx = CancelIoEx;
 
     BOOL WINAPI Mine_CancelIoEx(HANDLE file, LPOVERLAPPED overlapped) {
-        const bool cancelled = CancelQueuedSends(reinterpret_cast<SOCKET>(file), overlapped);
+        bool cancelled = CancelQueuedSends(reinterpret_cast<SOCKET>(file), overlapped);
+        std::vector<std::shared_ptr<UdpIoOperation>> receives;
+        {
+            std::lock_guard<std::mutex> lock(g_udpIoMutex);
+            for (const auto& entry : g_udpIoOperations)
+                if (entry.second->receiveEvent && entry.second->socket == reinterpret_cast<SOCKET>(file) &&
+                    (!overlapped || entry.first == overlapped))
+                    receives.push_back(entry.second);
+        }
+        for (const auto& operation : receives) {
+            std::lock_guard<std::mutex> lock(operation->receiveMutex);
+            if (operation->receivePending && Real_CancelIoEx(file, &operation->nativeReceive))
+                cancelled = true;
+        }
         BOOL result = Real_CancelIoEx(file, overlapped);
         return result || cancelled;
     }
@@ -1183,6 +1292,8 @@ namespace droute {
             WSASetLastError(WSAEMSGSIZE);
             return SOCKET_ERROR;
         }
+        if (!BindUdpSocket(s))
+            return SOCKET_ERROR;
         TrackUdpSocket(s);
 
         const bool nonblocking = IsNonBlockingSocket(s);
@@ -1276,6 +1387,8 @@ namespace droute {
         operation->buffer = Socks5::EncodeUdpPacket(*dst, nullptr, 0);
         operation->proxyHeaderSize = Socks5::UdpHeaderSize;
         if (!GatherApplicationBuffers(lpBuffers, dwBufferCount, operation->buffer, operation->applicationBufferSize))
+            return SOCKET_ERROR;
+        if (!BindUdpSocket(s))
             return SOCKET_ERROR;
         TrackUdpSocket(s);
 
@@ -1416,14 +1529,13 @@ namespace droute {
         operation->applicationFrom = lpFrom;
         operation->applicationFromLength = lpFromlen;
         operation->applicationFromCapacity = lpFrom && lpFromlen ? *lpFromlen : 0;
-        operation->applicationFlags = lpFlags;
         operation->receiveFlags = lpFlags ? *lpFlags : 0;
         operation->buffer.resize(static_cast<size_t>(applicationBufferSize) + Socks5::UdpMaxHeaderSize);
         operation->hasRelayAtStart = TryGetUdpRelay(s, operation->relayAtStart);
         CaptureUdpObservation(s, operation->observation, "WSARecvFrom");
 
-        if (lpOverlapped && !RegisterUdpIo(operation))
-            return SOCKET_ERROR;
+        if (lpOverlapped)
+            return BeginUdpReceive(operation);
 
         WSABUF proxyBuffer = {static_cast<ULONG>(operation->buffer.size()),
                               reinterpret_cast<char*>(operation->buffer.data())};
@@ -1431,12 +1543,14 @@ namespace droute {
         LPDWORD bytesReceived = lpNumberOfBytesRecvd ? lpNumberOfBytesRecvd : &localReceived;
         int status = Hooks::Real_WSARecvFrom(
             s, &proxyBuffer, 1, bytesReceived, &operation->receiveFlags,
-            reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength, lpOverlapped,
-            lpOverlapped && lpCompletionRoutine ? UdpIoCompletionRoutine : lpCompletionRoutine);
+            reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength, nullptr,
+            lpCompletionRoutine);
         int error = status == 0 ? 0 : WSAGetLastError();
 
         if (status == 0) {
             UdpCompletion completion = CompleteUdpIo(*operation, 0, *bytesReceived);
+            if (lpFlags)
+                *lpFlags = operation->receiveFlags;
             if (lpNumberOfBytesRecvd)
                 *lpNumberOfBytesRecvd = completion.bytes;
             if (completion.error != 0) {
@@ -1445,10 +1559,10 @@ namespace droute {
             }
         } else if (error != WSA_IO_PENDING) {
             UdpCompletion completion = CompleteUdpIo(*operation, error, 0);
+            if (lpFlags && error == WSAEMSGSIZE)
+                *lpFlags = operation->receiveFlags;
             if (lpNumberOfBytesRecvd)
                 *lpNumberOfBytesRecvd = completion.bytes;
-            if (lpOverlapped)
-                TakeUdpIo(lpOverlapped);
             WSASetLastError(error);
         }
 
@@ -1458,9 +1572,7 @@ namespace droute {
     BOOL WSAAPI Mine_WSAGetOverlappedResult(SOCKET s, LPWSAOVERLAPPED lpOverlapped, LPDWORD lpcbTransfer, BOOL fWait,
                                             LPDWORD lpdwFlags) {
         BOOL queuedResult;
-        if (QueuedResult(lpOverlapped, fWait ? INFINITE : 0, FALSE, lpcbTransfer, queuedResult)) {
-            if (lpdwFlags)
-                *lpdwFlags = 0;
+        if (QueuedResult(lpOverlapped, fWait ? INFINITE : 0, FALSE, lpcbTransfer, queuedResult, lpdwFlags)) {
             return queuedResult;
         }
         BOOL result = Hooks::Real_WSAGetOverlappedResult(s, lpOverlapped, lpcbTransfer, fWait, lpdwFlags);
