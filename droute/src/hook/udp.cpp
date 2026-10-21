@@ -1032,7 +1032,8 @@ namespace droute {
             reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength,
             &operation->nativeReceive, nullptr);
         int error = result == 0 ? 0 : WSAGetLastError();
-        if (error == WSA_IO_PENDING) {
+        // keep one completion path, including packets already buffered by winsock
+        if (result == 0 || error == WSA_IO_PENDING) {
             operation->receivePending = true;
             context.release();
             SetThreadpoolWait(wait, operation->receiveEvent, nullptr);
@@ -1041,10 +1042,6 @@ namespace droute {
         }
         lock.unlock();
         CloseThreadpoolWait(wait);
-        if (result == 0) {
-            FinishQueuedIo(operation, 0, bytes);
-            return 0;
-        }
         TakeUdpIo(operation->overlapped);
         CompleteUdpIo(*operation, error, 0);
         WSASetLastError(error);
@@ -1537,22 +1534,14 @@ namespace droute {
         operation->hasRelayAtStart = TryGetUdpRelay(s, operation->relayAtStart);
         CaptureUdpObservation(s, operation->observation, "WSARecvFrom");
 
+        if (lpOverlapped)
+            return BeginUdpReceive(operation);
+
         WSABUF proxyBuffer = {static_cast<ULONG>(operation->buffer.size()),
                               reinterpret_cast<char*>(operation->buffer.data())};
         DWORD localReceived = 0;
         LPDWORD bytesReceived = lpNumberOfBytesRecvd ? lpNumberOfBytesRecvd : &localReceived;
-        int status;
-        if (lpOverlapped) {
-            status = BeginUdpReceive(operation);
-            if (status == 0) {
-                if (lpNumberOfBytesRecvd)
-                    *lpNumberOfBytesRecvd = operation->completedBytes;
-                if (lpFlags)
-                    *lpFlags = operation->receiveFlags;
-            }
-            return status;
-        }
-        status = Hooks::Real_WSARecvFrom(
+        int status = Hooks::Real_WSARecvFrom(
             s, &proxyBuffer, 1, bytesReceived, &operation->receiveFlags,
             reinterpret_cast<sockaddr*>(&operation->receivedFrom), &operation->receivedFromLength, nullptr,
             lpCompletionRoutine);
