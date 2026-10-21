@@ -545,6 +545,20 @@ namespace droute {
         }
     }
 
+    static bool BindUdpSocket(SOCKET s) {
+        std::lock_guard<std::shared_mutex> lock(g_stateMutex);
+        sockaddr_in local = {};
+        int size = sizeof(local);
+        if (getsockname(s, reinterpret_cast<sockaddr*>(&local), &size) == 0)
+            return true;
+        if (WSAGetLastError() != WSAEINVAL)
+            return false;
+
+        local = {};
+        local.sin_family = AF_INET;
+        return Hooks::Real_bind(s, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) == 0;
+    }
+
     static void TrackUdpSocket(SOCKET s) {
         std::lock_guard<std::shared_mutex> lock(g_stateMutex);
         if (g_udpMap.find(s) != g_udpMap.end())
@@ -888,15 +902,8 @@ namespace droute {
             return result;
         }
 
-        sockaddr_in local = {};
-        int size = sizeof(local);
-        if (getsockname(socket, reinterpret_cast<sockaddr*>(&local), &size) != 0) {
-            if (WSAGetLastError() != WSAEINVAL)
-                return SOCKET_ERROR;
-            local.sin_family = AF_INET;
-            if (Hooks::Real_bind(socket, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) != 0)
-                return SOCKET_ERROR;
-        }
+        if (!BindUdpSocket(socket))
+            return SOCKET_ERROR;
         TrackUdpSocket(socket);
         const auto peer = *reinterpret_cast<const sockaddr_in*>(address);
         {
@@ -1288,6 +1295,8 @@ namespace droute {
             WSASetLastError(WSAEMSGSIZE);
             return SOCKET_ERROR;
         }
+        if (!BindUdpSocket(s))
+            return SOCKET_ERROR;
         TrackUdpSocket(s);
 
         const bool nonblocking = IsNonBlockingSocket(s);
@@ -1381,6 +1390,8 @@ namespace droute {
         operation->buffer = Socks5::EncodeUdpPacket(*dst, nullptr, 0);
         operation->proxyHeaderSize = Socks5::UdpHeaderSize;
         if (!GatherApplicationBuffers(lpBuffers, dwBufferCount, operation->buffer, operation->applicationBufferSize))
+            return SOCKET_ERROR;
+        if (!BindUdpSocket(s))
             return SOCKET_ERROR;
         TrackUdpSocket(s);
 
