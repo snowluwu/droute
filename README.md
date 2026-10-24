@@ -10,7 +10,7 @@
 
 **Droute** adds SOCKS5 proxy support to the Discord Desktop Client on Windows for chat, media, voice calls and screen sharing.
 
-Inspired by [force-proxy](https://github.com/runetfreedom/force-proxy). Uses [MinHook](https://github.com/tsudakageyu/minhook) to intercept network calls.
+Inspired by [force-proxy](https://github.com/runetfreedom/force-proxy). Uses [weave](https://github.com/snowluwu/weave) for network interception and SOCKS5 transport; both libraries use [MinHook](https://github.com/tsudakageyu/minhook).
 
 > [!NOTE]
 > Requires a running SOCKS5 proxy. Voice calls and screen sharing also need UDP support. A local proxy from v2rayN, Clash Verge or NekoBox works too.
@@ -87,13 +87,15 @@ List available options:
 
 ### Main library
 
-The installer copies `version.dll` from the Windows `System32` folder to the selected Discord `app-*` folder. It adds `droute.dll` to the import table of this copy and places `droute.dll` in the same folder.
+The installer copies `version.dll` from the Windows `System32` folder to the selected Discord `app-*` folder. It adds `droute.dll` to the import table of this copy and places `droute.dll` and `weave_proxy.dll` in the same folder.
 
-When Discord loads the local `version.dll`, Windows also loads `droute.dll`. This is the main Droute library: it uses MinHook to intercept Winsock calls and send connections through SOCKS5. The original system DLL and Discord executable are not changed.
+The import chain is `version.dll` → `droute.dll` → `weave_proxy.dll`. Droute reads the registry settings and starts weave; weave owns Winsock interception and SOCKS5 connections. The original system DLL and the Discord executable on disk are not changed.
+
+Droute temporarily redirects the executable entry point in memory. At that entry point it restores the original bytes, configures and starts weave outside the loader lock, then enters the application's CRT. This starts interception before application startup code without waiting for a background initialization thread. Network activity in earlier DLL initializers or TLS callbacks is outside this startup guarantee. Droute is installed as an import, not loaded dynamically into an already running process.
 
 ### Applying after updates
 
-The installer places `Droute.UpdaterHook.dll` and `Update.exe.config` in the same folder as Discord's `Update.exe`. The config file tells the updater to load the hook. Before Discord starts, the hook finds the latest `app-*` folder and installs `version.dll` and `droute.dll` if they are missing.
+The installer places `Droute.UpdaterHook.dll` and `Update.exe.config` in the same folder as Discord's `Update.exe`. The config file tells the updater to load the hook. Before Discord starts, the hook finds the latest `app-*` folder and installs the complete set of `weave_proxy.dll`, `droute.dll` and `version.dll` if any are missing. Droute also transfers this set when Discord launches an updated version. Dependencies are published before `version.dll`; failed publication restores the previous files. Close Discord before replacing the installed set.
 
 ### Settings & Logs
 
@@ -111,3 +113,16 @@ Include your Droute version, Discord build, proxy software and what went wrong. 
 
 - Logs include session IDs (`SESSION`), process PIDs, and connection generations (`generation`) to help trace traffic flows.
 - Proxy usernames/passwords, packet contents and command-line arguments are **not logged**.
+
+
+## Building
+
+Clone with `--recurse-submodules`, or run `git submodule update --init --recursive` in an existing checkout. Weave is pinned at `external/weave`; builds use that revision rather than the latest remote branch.
+
+Use Visual Studio 2022 with the C++ desktop workload, Windows SDK and .NET desktop tools:
+
+```powershell
+msbuild droute.sln /restore /p:Configuration=Release /p:Platform=x64
+```
+
+The solution builds weave, droute, updater hook and installer. Both native DLLs are embedded in the installer and updater hook. Releases include `droute_64.pdb` and `weave_proxy.pdb` from the same build as the installed DLLs; keep both for native debugging. The installed `droute.dll` is the build output `droute_64.dll` renamed by the installer.
