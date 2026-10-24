@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.37111.16
@@ -22,12 +22,18 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deps", "deps", "{36D591C7-6
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "core", "core\core.csproj", "{3B9A078A-7068-4DFB-B44A-0C32FAF7F931}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "weave", "external\weave\weave.vcxproj", "{B8438C57-71E7-49F9-81EB-58AB44503B72}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B8438C57-71E7-49F9-81EB-58AB44503B72}.Debug|x64.ActiveCfg = Debug|x64
+		{B8438C57-71E7-49F9-81EB-58AB44503B72}.Debug|x64.Build.0 = Debug|x64
+		{B8438C57-71E7-49F9-81EB-58AB44503B72}.Release|x64.ActiveCfg = Release|x64
+		{B8438C57-71E7-49F9-81EB-58AB44503B72}.Release|x64.Build.0 = Release|x64
 		{828C8590-E0A0-4682-A8B9-AF390FEC0340}.Debug|x64.ActiveCfg = Debug|x64
 		{828C8590-E0A0-4682-A8B9-AF390FEC0340}.Debug|x64.Build.0 = Debug|x64
 		{828C8590-E0A0-4682-A8B9-AF390FEC0340}.Release|x64.ActiveCfg = Release|x64

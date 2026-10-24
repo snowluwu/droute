@@ -7,17 +7,14 @@
     <Filter Include="src\core">
       <UniqueIdentifier>{a2b3c4d5-e6f7-8901-bcde-f12345678901}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\net">
-      <UniqueIdentifier>{a3b4c5d6-f7a8-9012-cdef-123456789012}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\hook">
       <UniqueIdentifier>{a4b5c6d7-f8a9-0123-defa-234567890123}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="src\dllmain.hpp">
-      <Filter>src</Filter>
+    <ClInclude Include="src\hook\process.hpp">
+      <Filter>src\hook</Filter>
     </ClInclude>
     <ClInclude Include="src\core\config.hpp">
       <Filter>src\core</Filter>
@@ -25,27 +22,12 @@
     <ClInclude Include="src\core\logger.hpp">
       <Filter>src\core</Filter>
     </ClInclude>
-    <ClInclude Include="src\core\utils.hpp">
-      <Filter>src\core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\net\socks5.hpp">
-      <Filter>src\net</Filter>
-    </ClInclude>
-    <ClInclude Include="src\hook\hooks.hpp">
-      <Filter>src\hook</Filter>
-    </ClInclude>
-    <ClInclude Include="src\hook\tcp.hpp">
-      <Filter>src\hook</Filter>
-    </ClInclude>
-    <ClInclude Include="src\hook\async.hpp">
-      <Filter>src\hook</Filter>
-    </ClInclude>
-    <ClInclude Include="src\hook\udp.hpp">
-      <Filter>src\hook</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
+    <ClCompile Include="src\hook\process.cpp">
+      <Filter>src\hook</Filter>
+    </ClCompile>
     <ClCompile Include="src\dllmain.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -54,24 +36,6 @@
     </ClCompile>
     <ClCompile Include="src\core\logger.cpp">
       <Filter>src\core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\utils.cpp">
-      <Filter>src\core</Filter>
-    </ClCompile>
-    <ClCompile Include="src\net\socks5.cpp">
-      <Filter>src\net</Filter>
-    </ClCompile>
-    <ClCompile Include="src\hook\hooks.cpp">
-      <Filter>src\hook</Filter>
-    </ClCompile>
-    <ClCompile Include="src\hook\tcp.cpp">
-      <Filter>src\hook</Filter>
-    </ClCompile>
-    <ClCompile Include="src\hook\async.cpp">
-      <Filter>src\hook</Filter>
-    </ClCompile>
-    <ClCompile Include="src\hook\udp.cpp">
-      <Filter>src\hook</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

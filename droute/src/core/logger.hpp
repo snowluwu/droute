@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pch.h"
+#include <weave.h>
 
 namespace droute {
 
@@ -16,9 +17,9 @@ namespace droute {
 
     namespace Logger {
 
-        bool Init();
-        // drains the queue; call only outside dllmain
-        void Shutdown();
+        void Init();
+        void Ready();
+        void __cdecl Receive(const weave::LogRecord* record, void* context);
         void SetLevel(LogLevel level);
         bool Enabled(LogLevel level);
 

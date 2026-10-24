@@ -5,6 +5,7 @@
 namespace droute {
 
     extern std::wstring g_ourDir;
+    bool InstallProcessHook();
 
 }
 

@@ -116,6 +116,7 @@
     <Content Include="Other\vectors.ico" />
     <None Include="Resources\Droute.UpdaterHook.dll" />
     <Content Include="Resources\droute_64.dll" />
+    <Content Include="Resources\weave_proxy.dll" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\core\core.csproj">

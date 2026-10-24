@@ -99,7 +99,11 @@ namespace Droute.UpdaterHook
                 Logger.Info($"event=updater.patch.target operation={operation} directory=\"{appDirectory}\"");
                 string proxyPath = PatchInstaller.GetProxyPath(appDirectory);
                 string libraryPath = PatchInstaller.GetNativeLibraryPath(appDirectory);
-                Logger.Info($"event=updater.patch.inspect operation={operation} proxy=\"{proxyPath}\" proxy_exists={File.Exists(proxyPath)} payload=\"{libraryPath}\" payload_exists={File.Exists(libraryPath)}");
+                string weavePath = PatchInstaller.GetWeaveLibraryPath(appDirectory);
+                Logger.Info($"event=updater.patch.inspect operation={operation} " +
+                    $"proxy=\"{proxyPath}\" proxy_exists={File.Exists(proxyPath)} " +
+                    $"payload=\"{libraryPath}\" payload_exists={File.Exists(libraryPath)} " +
+                    $"weave=\"{weavePath}\" weave_exists={File.Exists(weavePath)}");
                 if (PatchInstaller.HasPatchFiles(appDirectory))
                 {
                     outcome = "skipped_existing_files";
@@ -107,7 +111,7 @@ namespace Droute.UpdaterHook
                 }
 
                 stage = "install";
-                PatchInstaller.InstallPatch(appDirectory, Properties.Resources.Droute64, update =>
+                PatchInstaller.InstallPatch(appDirectory, Properties.Resources.Droute64, Properties.Resources.WeaveProxy, update =>
                 {
                     if (update.Stage == InstallationStage.CleanupFailed)
                     {

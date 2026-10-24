@@ -53,7 +53,7 @@ namespace Droute.Installer.Classes
                             break;
 
                         case InstallationStage.PublishingLibrary:
-                            log(MessageLevel.Step, $"Installing {PatchInstaller.NativeLibraryFileName}...");
+                            log(MessageLevel.Step, $"Installing {Path.GetFileName(update.Path)}...");
                             progress?.Invoke(50);
                             break;
 
@@ -107,7 +107,7 @@ namespace Droute.Installer.Classes
 
                 if (install)
                 {
-                    var files = InstallationFiles.FromBytes(Properties.Resources.Droute64,
+                    var files = InstallationFiles.FromBytes(Properties.Resources.Droute64, Properties.Resources.WeaveProxy,
                         Properties.Resources.UpdaterHook, Properties.Resources.UpdaterConfig);
 
                     PatchInstaller.Install(branch, files, onProgress);

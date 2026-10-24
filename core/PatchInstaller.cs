@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 
@@ -9,6 +10,7 @@ namespace Droute.Core
     {
         public const string ProxyFileName = "version.dll";
         public const string NativeLibraryFileName = "droute.dll";
+        public const string WeaveLibraryFileName = "weave_proxy.dll";
         public const string UpdaterHookFileName = "Droute.UpdaterHook.dll";
         public const string UpdaterConfigFileName = "Update.exe.config";
         public const string UpdaterFileName = "Update.exe";
@@ -19,6 +21,9 @@ namespace Droute.Core
         public static string GetNativeLibraryPath(string appDirectory)
             => Path.Combine(appDirectory, NativeLibraryFileName);
 
+        public static string GetWeaveLibraryPath(string appDirectory)
+            => Path.Combine(appDirectory, WeaveLibraryFileName);
+
         public static string GetUpdaterPath(string rootDirectory)
             => Path.Combine(rootDirectory, UpdaterFileName);
 
@@ -28,10 +33,11 @@ namespace Droute.Core
         public static string GetUpdaterConfigPath(string rootDirectory)
             => Path.Combine(rootDirectory, UpdaterConfigFileName);
 
-        /// <summary>checks for both patch files; does not verify their contents or runtime state.</summary>
+        /// <summary>checks for all three patch files; does not verify their contents or runtime state.</summary>
         public static bool HasPatchFiles(string appDirectory)
             => !string.IsNullOrEmpty(appDirectory) &&
-                File.Exists(GetProxyPath(appDirectory)) && File.Exists(GetNativeLibraryPath(appDirectory));
+                File.Exists(GetProxyPath(appDirectory)) && File.Exists(GetNativeLibraryPath(appDirectory)) &&
+                File.Exists(GetWeaveLibraryPath(appDirectory));
 
         /// <summary>installs both components for the latest version of a standard discord branch.</summary>
         public static void Install(DiscordBranch branch, InstallationFiles files,
@@ -53,14 +59,14 @@ namespace Droute.Core
             if (!File.Exists(updaterPath))
                 throw new FileNotFoundException("Update.exe not found.", updaterPath);
 
-            InstallPatch(installation.AppDirectory, files.NativeLibrary, onProgress);
+            InstallPatch(installation.AppDirectory, files.NativeLibrary, files.WeaveLibrary, onProgress);
             InstallUpdaterHook(installation.RootDirectory, files.UpdaterHook, files.UpdaterConfig, onProgress);
         }
 
         /// <summary>installs only the native patch in an existing app directory; close discord first.</summary>
         /// <exception cref="DirectoryNotFoundException">the app directory does not exist.</exception>
         /// <exception cref="IOException">a patch file could not be prepared or published.</exception>
-        public static void InstallPatch(string appDirectory, byte[] nativeLibrary,
+        public static void InstallPatch(string appDirectory, byte[] nativeLibrary, byte[] weaveLibrary,
             Action<InstallationProgress> onProgress = null)
         {
             if (string.IsNullOrWhiteSpace(appDirectory) || !Directory.Exists(appDirectory))
@@ -69,44 +75,87 @@ namespace Droute.Core
             if (nativeLibrary == null || nativeLibrary.Length == 0)
                 throw new ArgumentException("Native library is required.", nameof(nativeLibrary));
 
-            string proxyPath = GetProxyPath(appDirectory);
-            string libraryPath = GetNativeLibraryPath(appDirectory);
+            if (weaveLibrary == null || weaveLibrary.Length == 0)
+                throw new ArgumentException("Weave library is required.", nameof(weaveLibrary));
+
+            string[] targets =
+            {
+                GetWeaveLibraryPath(appDirectory), GetNativeLibraryPath(appDirectory), GetProxyPath(appDirectory)
+            };
             string suffix = CreateStagingSuffix();
-            string stagedProxy = proxyPath + suffix;
-            string stagedLibrary = libraryPath + suffix;
+            string[] staged = Array.ConvertAll(targets, path => path + suffix);
+            string[] backups = Array.ConvertAll(targets, path => path + suffix + ".bak");
+            bool[] existed = Array.ConvertAll(targets, File.Exists);
+            bool[] published = new bool[targets.Length];
+            bool[] keepBackup = new bool[targets.Length];
 
             try
             {
-                Report(onProgress, InstallationStage.CopyingProxy, stagedProxy);
-                PatchFiles.CopySystemProxy(stagedProxy);
+                Report(onProgress, InstallationStage.CopyingProxy, staged[2]);
+                PatchFiles.CopySystemProxy(staged[2]);
+                Report(onProgress, InstallationStage.PatchingProxy, staged[2]);
+                PatchFiles.AddLibraryImport(staged[2]);
 
-                Report(onProgress, InstallationStage.PatchingProxy, stagedProxy);
-                PatchFiles.AddLibraryImport(stagedProxy);
+                Report(onProgress, InstallationStage.StagingLibrary, staged[0]);
+                File.WriteAllBytes(staged[0], weaveLibrary);
+                Report(onProgress, InstallationStage.StagingLibrary, staged[1]);
+                File.WriteAllBytes(staged[1], nativeLibrary);
 
-                Report(onProgress, InstallationStage.StagingLibrary, stagedLibrary);
-                File.WriteAllBytes(stagedLibrary, nativeLibrary);
+                for (int i = 0; i < targets.Length; ++i)
+                    if (existed[i])
+                        File.Copy(targets[i], backups[i]);
 
-                Report(onProgress, InstallationStage.PublishingLibrary, libraryPath);
-                PatchFiles.PublishStagedFile(stagedLibrary, libraryPath);
-                stagedLibrary = null;
-
-                Report(onProgress, InstallationStage.PublishingProxy, proxyPath);
-                PatchFiles.PublishStagedFile(stagedProxy, proxyPath);
-                stagedProxy = null;
-
+                // publish dependencies before the proxy can load them
+                for (int i = 0; i < targets.Length; ++i)
+                {
+                    var stage = i == 2 ? InstallationStage.PublishingProxy : InstallationStage.PublishingLibrary;
+                    Report(onProgress, stage, targets[i]);
+                    PatchFiles.PublishStagedFile(staged[i], targets[i]);
+                    published[i] = true;
+                }
                 Report(onProgress, InstallationStage.PatchInstalled, appDirectory);
+            }
+            catch (Exception error)
+            {
+                var errors = new List<Exception> { error };
+                for (int i = targets.Length - 1; i >= 0; --i)
+                {
+                    if (!published[i])
+                        continue;
+
+                    try
+                    {
+                        if (existed[i])
+                            PatchFiles.PublishStagedFile(backups[i], targets[i]);
+                        else
+                            File.Delete(targets[i]);
+                    }
+                    catch (Exception rollbackError)
+                    {
+                        keepBackup[i] = true;
+                        errors.Add(new IOException($"Could not restore {targets[i]}. Backup: {backups[i]}", rollbackError));
+                    }
+                }
+                if (errors.Count > 1)
+                    throw new IOException("Patch installation and rollback failed.\n" +
+                        string.Join("\n", errors.ConvertAll(item => item.ToString())), error);
+                throw;
             }
             finally
             {
-                Cleanup(stagedProxy, onProgress);
-                Cleanup(stagedLibrary, onProgress);
+                for (int i = 0; i < targets.Length; ++i)
+                {
+                    Cleanup(staged[i], onProgress);
+                    if (!keepBackup[i])
+                        Cleanup(backups[i], onProgress);
+                }
             }
         }
 
-        /// <summary>reads the native library from a file and installs only the app patch.</summary>
-        public static void InstallPatch(string appDirectory, string nativeLibraryPath,
+        /// <summary>reads both libraries before installing the app patch.</summary>
+        public static void InstallPatch(string appDirectory, string nativeLibraryPath, string weaveLibraryPath,
             Action<InstallationProgress> onProgress = null)
-            => InstallPatch(appDirectory, File.ReadAllBytes(nativeLibraryPath), onProgress);
+            => InstallPatch(appDirectory, File.ReadAllBytes(nativeLibraryPath), File.ReadAllBytes(weaveLibraryPath), onProgress);
 
         /// <summary>installs only the updater hook beside Update.exe.</summary>
         /// <exception cref="IOException">the updater is missing or a hook file could not be written.</exception>
@@ -204,10 +253,14 @@ namespace Droute.Core
 
             string proxyPath = GetProxyPath(appDirectory);
             string libraryPath = GetNativeLibraryPath(appDirectory);
+            string weavePath = GetWeaveLibraryPath(appDirectory);
+
             Report(onProgress, InstallationStage.RemovingFile, proxyPath);
             File.Delete(proxyPath);
             Report(onProgress, InstallationStage.RemovingFile, libraryPath);
             File.Delete(libraryPath);
+            Report(onProgress, InstallationStage.RemovingFile, weavePath);
+            File.Delete(weavePath);
 
             Report(onProgress, InstallationStage.PatchUninstalled, appDirectory);
         }

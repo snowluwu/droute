@@ -1,7 +1,5 @@
 #include "pch.h"
-#include "src/dllmain.hpp"
 #include "src/hook/process.hpp"
-#include "src/hook/hooks.hpp"
 #include "src/core/logger.hpp"
 
 namespace droute {
@@ -17,21 +15,72 @@ namespace droute {
                _wcsicmp(name.c_str(), L"DiscordPTB.exe") == 0;
     }
 
-    static void DeployDlls(const std::wstring& targetDir) {
-        const wchar_t* files[] = {L"version.dll", L"droute.dll"};
-        for (const wchar_t* name : files) {
-            const std::wstring source = g_ourDir + L"\\" + name;
-            const std::wstring destination = targetDir + L"\\" + name;
-            if (GetFileAttributesW(destination.c_str()) != INVALID_FILE_ATTRIBUTES)
-                continue;
-            if (GetFileAttributesW(source.c_str()) == INVALID_FILE_ATTRIBUTES)
-                continue;
-
-            if (CopyFileW(source.c_str(), destination.c_str(), FALSE))
-                LOG_INFO("deployed %S -> %S", name, destination.c_str());
-            else
-                LOG_WARN("copy %S failed: %u", name, GetLastError());
+    bool InstallProcessHook() {
+        if (MH_Initialize() != MH_OK)
+            return false;
+        if (MH_CreateHookApi(L"kernel32.dll", "CreateProcessW", Mine_CreateProcessW,
+                             reinterpret_cast<void**>(&Hooks::Real_CreateProcessW)) != MH_OK ||
+            MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
+            MH_Uninitialize();
+            return false;
         }
+        return true;
+    }
+
+    static bool DeployDlls(const std::wstring& targetDir) {
+        static std::mutex mutex;
+        std::lock_guard<std::mutex> lock(mutex);
+        const wchar_t* names[] = {L"weave_proxy.dll", L"droute.dll", L"version.dll"};
+        std::wstring sources[3], targets[3], staged[3], backups[3];
+        bool exists[3]{}, published[3]{};
+        const std::wstring suffix = L".droute." + std::to_wstring(GetCurrentProcessId()) + L".tmp";
+        bool complete = true;
+        for (size_t i = 0; i < 3; ++i) {
+            sources[i] = g_ourDir + L"\\" + names[i];
+            targets[i] = targetDir + L"\\" + names[i];
+            exists[i] = GetFileAttributesW(targets[i].c_str()) != INVALID_FILE_ATTRIBUTES;
+            complete = complete && exists[i];
+            staged[i] = targets[i] + suffix;
+            backups[i] = staged[i] + L".bak";
+        }
+        if (complete)
+            return true;
+        DWORD error = ERROR_SUCCESS;
+        for (size_t i = 0; i < 3; ++i) {
+            if (!CopyFileW(sources[i].c_str(), staged[i].c_str(), FALSE) ||
+                (exists[i] && !CopyFileW(targets[i].c_str(), backups[i].c_str(), FALSE))) {
+                error = GetLastError();
+                break;
+            }
+        }
+        for (size_t i = 0; !error && i < 3; ++i) {
+            if (!MoveFileExW(staged[i].c_str(), targets[i].c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                error = GetLastError();
+            else
+                published[i] = true;
+        }
+        if (error) {
+            for (int i = 2; i >= 0; --i) {
+                if (!published[i])
+                    continue;
+                const BOOL restored = exists[i]
+                    ? MoveFileExW(backups[i].c_str(), targets[i].c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+                    : DeleteFileW(targets[i].c_str());
+                if (!restored)
+                    LOG_ERROR("rollback failed path=%S backup=%S error=%lu", targets[i].c_str(), backups[i].c_str(), GetLastError());
+            }
+            LOG_ERROR("patch deployment failed target=%S error=%lu", targetDir.c_str(), error);
+        } else {
+            LOG_INFO("deployed patch to %S", targetDir.c_str());
+        }
+        for (size_t i = 0; i < 3; ++i) {
+            DeleteFileW(staged[i].c_str());
+            // keep backups when rollback failed
+            if (!error || !published[i])
+                DeleteFileW(backups[i].c_str());
+        }
+        SetLastError(error);
+        return error == ERROR_SUCCESS;
     }
 
 }
@@ -41,9 +90,6 @@ BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
     BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory,
     LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation)
 {
-    if (!droute::IsInitializingRuntime())
-        droute::EnsureRuntime();
-
     // deploy before the new process loads version.dll
     std::wstring exePath;
 
@@ -97,7 +143,8 @@ BOOL WINAPI Mine_CreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
                 const std::wstring branchName = branchRoot.substr(branchSeparator + 1);
                 if (appSeparator != std::wstring::npos && appName.compare(0, 4, L"app-") == 0 && appName.size() > 4 &&
                     _wcsicmp((branchName + L".exe").c_str(), fileName.c_str()) == 0) {
-                    droute::DeployDlls(targetDir);
+                    if (!droute::DeployDlls(targetDir))
+                        return FALSE;
                 }
             }
         }

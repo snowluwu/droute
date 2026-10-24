@@ -55,25 +55,27 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;DROUTE_EXPORTS;_WINDOWS;_USRDLL;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;DROUTE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\external\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(IntDir);$(ProjectDir);$(ProjectDir)..\external\weave\include;$(ProjectDir)..\external\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>if not exist "$(SolutionDir)installer\Resources\" mkdir "$(SolutionDir)installer\Resources\"
 copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)installer\Resources\"
+copy /Y "$(ProjectDir)..\external\weave\dist\$(Platform)\$(Configuration)\weave_proxy.dll" "$(SolutionDir)installer\Resources\"
 
 if not exist "$(SolutionDir)updaterHook\Resources\" mkdir "$(SolutionDir)updaterHook\Resources\"
-copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Command>
+copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"
+copy /Y "$(ProjectDir)..\external\weave\dist\$(Platform)\$(Configuration)\weave_proxy.dll" "$(SolutionDir)updaterHook\Resources\"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -82,38 +84,33 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;DROUTE_EXPORTS;_WINDOWS;_USRDLL;_WINSOCK_DEPRECATED_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;DROUTE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\external\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(IntDir);$(ProjectDir);$(ProjectDir)..\external\weave\include;$(ProjectDir)..\external\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>if not exist "$(SolutionDir)installer\Resources\" mkdir "$(SolutionDir)installer\Resources\"
 copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)installer\Resources\"
+copy /Y "$(ProjectDir)..\external\weave\dist\$(Platform)\$(Configuration)\weave_proxy.dll" "$(SolutionDir)installer\Resources\"
 
 if not exist "$(SolutionDir)updaterHook\Resources\" mkdir "$(SolutionDir)updaterHook\Resources\"
-copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Command>
+copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"
+copy /Y "$(ProjectDir)..\external\weave\dist\$(Platform)\$(Configuration)\weave_proxy.dll" "$(SolutionDir)updaterHook\Resources\"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
-    <ClInclude Include="src\dllmain.hpp" />
     <ClInclude Include="src\core\config.hpp" />
     <ClInclude Include="src\core\logger.hpp" />
-    <ClInclude Include="src\core\utils.hpp" />
-    <ClInclude Include="src\net\socks5.hpp" />
-    <ClInclude Include="src\hook\hooks.hpp" />
-    <ClInclude Include="src\hook\tcp.hpp" />
-    <ClInclude Include="src\hook\async.hpp" />
-    <ClInclude Include="src\hook\udp.hpp" />
     <ClInclude Include="src\hook\process.hpp" />
   </ItemGroup>
   <ItemGroup>
@@ -124,19 +121,20 @@ copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)updaterHook\Resources\"</Com
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\core\config.cpp" />
     <ClCompile Include="src\core\logger.cpp" />
-    <ClCompile Include="src\core\utils.cpp" />
-    <ClCompile Include="src\net\socks5.cpp" />
-    <ClCompile Include="src\hook\hooks.cpp" />
-    <ClCompile Include="src\hook\tcp.cpp" />
-    <ClCompile Include="src\hook\async.cpp" />
-    <ClCompile Include="src\hook\udp.cpp" />
     <ClCompile Include="src\hook\process.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\external\weave\weave.vcxproj">
+      <Project>{B8438C57-71E7-49F9-81EB-58AB44503B72}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\external\minhook\build\VC17\libMinHook.vcxproj">
       <Project>{F142A341-5EE0-442D-A15F-98AE9B48DBAE}</Project>
     </ProjectReference>
   </ItemGroup>
+  <Target Name="GenerateVersion" BeforeTargets="ClCompile">
+    <MakeDir Directories="$(IntDir)" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\version.ps1&quot; -OutputDirectory &quot;$(IntDir).&quot;" />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
