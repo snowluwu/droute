@@ -45,6 +45,7 @@ jobs:
           }
           New-Item -ItemType Directory -Path release -Force | Out-Null
           Compress-Archive -Path "$package/*" -DestinationPath release/droute.zip -Force
+          Copy-Item "dist/x64/Release/droute_64.pdb" -Destination release/droute_64.pdb
 
       - name: Generate release notes
         if: startsWith(github.ref, 'refs/tags/')
@@ -60,7 +61,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: droute-build
-          path: release/droute.zip
+          path: |
+            release/droute.zip
+            release/droute_64.pdb
           if-no-files-found: error
           compression-level: 0
 
@@ -68,7 +71,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/droute.zip
+          files: |
+            release/droute.zip
+            release/droute_64.pdb
           fail_on_unmatched_files: true
           name: Release ${{ github.ref_name }}
           body_path: release/release-notes.md
