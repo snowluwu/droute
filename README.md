@@ -97,6 +97,10 @@ Droute temporarily redirects the executable entry point in memory. At that entry
 
 The installer places `Droute.UpdaterHook.dll` and `Update.exe.config` in the same folder as Discord's `Update.exe`. The config file tells the updater to load the hook. Before Discord starts, the hook finds the latest `app-*` folder and installs the complete set of `weave_proxy.dll`, `droute.dll` and `version.dll` if any are missing. Droute also transfers this set when Discord launches an updated version. Dependencies are published before `version.dll`; failed publication restores the previous files. Close Discord before replacing the installed set.
 
+### Versions
+
+The droute application version is maintained in `installer/Properties/AssemblyInfo.cs`. The native `droute.dll` reads the same version during the build and includes the Git revision in its product version. Weave has its own version in `external/weave/VERSION` because it is a separate library.
+
 ### Settings & Logs
 
 - **Configuration:** Proxy settings are stored for the current Windows user at `HKCU\Software\droute`. Change them through the installer or `regedit`, then restart Discord.

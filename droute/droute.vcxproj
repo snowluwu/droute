@@ -68,6 +68,9 @@
       <EnableUAC>false</EnableUAC>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
     <PostBuildEvent>
       <Command>if not exist "$(SolutionDir)installer\Resources\" mkdir "$(SolutionDir)installer\Resources\"
 copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)installer\Resources\"
@@ -97,6 +100,9 @@ copy /Y "$(ProjectDir)..\external\weave\dist\$(Platform)\$(Configuration)\weave_
       <EnableUAC>false</EnableUAC>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
     <PostBuildEvent>
       <Command>if not exist "$(SolutionDir)installer\Resources\" mkdir "$(SolutionDir)installer\Resources\"
 copy /Y "$(OutDir)$(TargetName).dll" "$(SolutionDir)installer\Resources\"
@@ -112,6 +118,7 @@ copy /Y "$(ProjectDir)..\external\weave\dist\$(Platform)\$(Configuration)\weave_
     <ClInclude Include="src\core\config.hpp" />
     <ClInclude Include="src\core\logger.hpp" />
     <ClInclude Include="src\hook\process.hpp" />
+    <ResourceCompile Include="src\version.rc" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -131,7 +138,7 @@ copy /Y "$(ProjectDir)..\external\weave\dist\$(Platform)\$(Configuration)\weave_
       <Project>{F142A341-5EE0-442D-A15F-98AE9B48DBAE}</Project>
     </ProjectReference>
   </ItemGroup>
-  <Target Name="GenerateVersion" BeforeTargets="ClCompile">
+  <Target Name="GenerateVersion" BeforeTargets="ClCompile;ResourceCompile">
     <MakeDir Directories="$(IntDir)" />
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)tools\version.ps1&quot; -OutputDirectory &quot;$(IntDir).&quot;" />
   </Target>
