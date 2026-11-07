@@ -36,7 +36,7 @@ jobs:
         run: |
           $package = Join-Path $env:RUNNER_TEMP "droute-release"
           New-Item -ItemType Directory -Path "$package/ru-RU" -Force | Out-Null
-          Copy-Item "installer/bin/Release/droute.exe", "installer/bin/Release/droute.exe.config", "README.md", "LICENSE.txt" -Destination $package
+          Copy-Item "installer/bin/Release/droute.exe", "installer/bin/Release/droute.exe.config", "README.md", "LICENSE" -Destination $package
           New-Item -ItemType Directory -Path "$package/licenses" -Force | Out-Null
           Copy-Item "external/weave/LICENSE" -Destination "$package/licenses/weave.txt"
           Copy-Item "external/minhook/LICENSE.txt" -Destination "$package/licenses/MinHook.txt"
