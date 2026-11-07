@@ -1,4 +1,4 @@
-# Droute (Proxy Support for Discord on Windows)
+# Droute: Proxy Support for Discord on Windows
 
 <p align="center">
   <img src="external/droute.svg" alt="Droute Logo" width="128">
@@ -16,6 +16,7 @@ Inspired by [force-proxy](https://github.com/runetfreedom/force-proxy). Uses [we
 > Requires a running SOCKS5 proxy. Voice calls and screen sharing also need UDP support. A local proxy from v2rayN, Clash Verge or NekoBox works too.
 
 ## Screenshots
+
 <details>
 <summary>Installer previews</summary>
 <br>
@@ -117,7 +118,6 @@ Include your Droute version, Discord build, proxy software and what went wrong. 
 
 - Logs include session IDs (`SESSION`), process PIDs, and connection generations (`generation`) to help trace traffic flows.
 - Proxy usernames/passwords, packet contents and command-line arguments are **not logged**.
-
 
 ## Building
 
