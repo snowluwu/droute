@@ -435,3 +435,5 @@ updaterHook/Resources/droute_*.dll
 
 installer/Resources/weave_proxy.dll
 updaterHook/Resources/weave_proxy.dll
+
+droute/src/RC*
