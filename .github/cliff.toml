@@ -8,6 +8,8 @@ body = """
 - [{{ commit.id | truncate(length=7, end="") }}:]({{ get_env(name="GITHUB_SERVER_URL", default="https://github.com") }}/{{ get_env(name="GITHUB_REPOSITORY", default="snowluwu/droute") }}/commit/{{ commit.id }}) `{{ commit.message | split(pat="\n") | first }}`
 {% endfor %}\
 {% endfor %}
+
+**Weave:** [{{ get_env(name="WEAVE_VERSION", default="unknown") }}](https://github.com/snowluwu/weave/releases/tag/{{ get_env(name="WEAVE_VERSION", default="unknown") }})
 """
 footer = "\n"
 trim = true
