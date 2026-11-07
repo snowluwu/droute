@@ -117,12 +117,6 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="tabPage1.Text" xml:space="preserve">
-    <value>Главные</value>
-  </data>
-  <data name="tabPage2.Text" xml:space="preserve">
-    <value>О программе</value>
-  </data>
   <data name="openLogsButton.Text" xml:space="preserve">
     <value>Открыть логи</value>
   </data>
@@ -153,9 +147,6 @@
   </data>
   <data name="autoRestartConfigCheckbox.Text" xml:space="preserve">
     <value>Перезапустить Discord при изменении конфигурации</value>
-  </data>
-  <data name="groupBox1.Text" xml:space="preserve">
-    <value>Конфигурация прокси</value>
   </data>
   <data name="resetCfgBtn.Text" xml:space="preserve">
     <value>Сбросить</value>
@@ -192,6 +183,12 @@
   </data>
   <data name="authCheckBox.Text" xml:space="preserve">
     <value>Авторизация</value>
+  </data>
+  <data name="groupBox1.Text" xml:space="preserve">
+    <value>Конфигурация прокси</value>
+  </data>
+  <data name="tabPage1.Text" xml:space="preserve">
+    <value>Главные</value>
   </data>
   <data name="licenseLink.Location" type="System.Drawing.Point, System.Drawing">
     <value>188, 163</value>
@@ -245,12 +242,12 @@
     <value>318, 60</value>
   </data>
   <data name="label7.Text" xml:space="preserve">
-    <value>Нативная интеграция прокси в Discord. Перенаправляет весь трафик приложения на SOCKS5 прокси.</value>
+    <value>Поддержка SOCKS5 для Discord</value>
   </data>
   <data name="pictureBox1.Image" type="System.Drawing.Bitmap, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
     <value>
         iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAL
-        DwAACw8BkvkDpQAAAA50RVh0U29mdHdhcmUARmlnbWGesZZjAAAiQklEQVR4Xu3dv28c17k3cP8JAkSa
+        DQAACw0B7QfALAAAAA50RVh0U29mdHdhcmUARmlnbWGesZZjAAAiQklEQVR4Xu3dv28c17k3cP8JAkSa
         yzc2rhVABhRDiQU7gXUBa8cCbCNyEAuGY+QW+eHU15BLdb6A3TN1Uug2Tmv4rW2oVafC6dknhbq35Yuz
         8krUM6R4SO7Ozpznc4BPY5Ly7sz58Z0zZ8688IKylnJh1r2yvd29vj3r/ry9293Z2un2tmfdve1Zd397
         Z/7wxVm3X2zvzh9tz+YHAKnszh896QdLv/jYvUVfudvdufhid3tr1nUXLnQXYv+qKKMoZaAvFbVU2MUA
@@ -399,6 +396,9 @@
         LtLpTrdXKu/jR04WjyCW2YN9YQFI6XHft+wHH5Z+cdFHliezyhT+rPtTmcY30K+v/H9qQjLYxeXkYgAA
         AABJRU5ErkJggg==
 </value>
+  </data>
+  <data name="tabPage2.Text" xml:space="preserve">
+    <value>О программе</value>
   </data>
   <data name="$this.Icon" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
     <value>
