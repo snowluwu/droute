@@ -12,7 +12,7 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "snowluwu"
-            VALUE "FileDescription", "Droute SOCKS5 Proxy Library"
+            VALUE "FileDescription", "SOCKS5 Support for Discord"
             VALUE "FileVersion", DROUTE_FILE_VERSION_STRING
             VALUE "InternalName", "droute"
             VALUE "OriginalFilename", "droute.dll"
