@@ -112,7 +112,7 @@ namespace Droute.Installer.Forms
 
         private void licenseLink_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            Process.Start("https://github.com/snowluwu/droute/blob/master/LICENSE.txt");
+            Process.Start("https://github.com/snowluwu/droute/blob/master/LICENSE");
         }
 
         private void inspiredLink_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
