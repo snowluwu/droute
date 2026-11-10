@@ -10,7 +10,9 @@
 
 **Droute** adds SOCKS5 proxy support to the Discord Desktop Client on Windows for chat, media, voice calls and screen sharing.
 
-Inspired by [force-proxy](https://github.com/runetfreedom/force-proxy). Uses [weave](https://github.com/snowluwu/weave) for network interception and SOCKS5 transport; both libraries use [MinHook](https://github.com/tsudakageyu/minhook).
+- Inspired by [force-proxy;](https://github.com/runetfreedom/force-proxy)
+- Uses [Weave;](https://github.com/snowluwu/weave)
+- Weave and Droute use [MinHook](https://github.com/tsudakageyu/minhook) for hooks.
 
 > [!NOTE]
 > Requires a running SOCKS5 proxy. Voice calls and screen sharing also need UDP support. A local proxy from v2rayN, Clash Verge or NekoBox works too.
@@ -86,38 +88,39 @@ List available options:
 
 ## How It Works
 
-### Main library
+### 1. Core Architecture & Interception
+* **Import Chain:** `version.dll` → `droute.dll` → `weave_proxy.dll`.
+* **Deployment:** The installer copies `version.dll` from `System32` to the active Discord version folder (`app-*`), adds `droute.dll` to its import table, and places both `droute.dll` and `weave_proxy.dll` in the same directory.
+* **Execution:** `Droute` reads proxy settings from the Windows registry (`HKCU\Software\droute`) and initializes `Weave` to handle Winsock interception and SOCKS5 routing. Original system binaries and Discord files on disk remain untouched.
 
-The installer copies `version.dll` from the Windows `System32` folder to the selected Discord `app-*` folder. It adds `droute.dll` to the import table of this copy and places `droute.dll` and `weave_proxy.dll` in the same folder.
+### 2. In-Memory Initialization
+`Droute` temporarily redirects the memory entry point of the executable:
+1. Restores original bytes at the entry point.
+2. Configures and launches `Weave` outside the loader lock.
+3. Transfers execution to the application CRT.
 
-The import chain is `version.dll` → `droute.dll` → `weave_proxy.dll`. Droute reads the registry settings and starts weave; weave owns Winsock interception and SOCKS5 connections. The original system DLL and the Discord executable on disk are not changed.
+* **Guarantee:** Interception activates before main application code executes, eliminating background thread initialization delays. Network activity inside early DLL initializers or TLS callbacks is not covered.
 
-Droute temporarily redirects the executable entry point in memory. At that entry point it restores the original bytes, configures and starts weave outside the loader lock, then enters the application's CRT. This starts interception before application startup code without waiting for a background initialization thread. Network activity in earlier DLL initializers or TLS callbacks is outside this startup guarantee. Droute is installed as an import, not loaded dynamically into an already running process.
+### 3. Auto-Updates & Updater Hook
+* **Setup:** The installer places `Droute.UpdaterHook.dll` and `Update.exe.config` alongside Discord's `Update.exe` to hook the update process.
+* **Verification:** Before Discord starts, the hook scans for the latest `app-*` folder and installs any missing components (`version.dll`, `droute.dll`, `weave_proxy.dll`).
+* **Migration:** When Discord updates, the hook automatically migrates the file set. Files are published ahead of `version.dll`; a failure rolls back to previous binaries. *(Always close Discord before manually replacing installed files).*
 
-### Applying after updates
+### 4. Versioning
+* **Droute:** Core version is maintained in `installer/Properties/AssemblyInfo.cs`. The native `droute.dll` embeds the Git revision into its product version at build time.
+* **Weave:** Maintained as an independent library with its own versioning stored in `external/weave/VERSION`.
 
-The installer places `Droute.UpdaterHook.dll` and `Update.exe.config` in the same folder as Discord's `Update.exe`. The config file tells the updater to load the hook. Before Discord starts, the hook finds the latest `app-*` folder and installs the complete set of `weave_proxy.dll`, `droute.dll` and `version.dll` if any are missing. Droute also transfers this set when Discord launches an updated version. Dependencies are published before `version.dll`; failed publication restores the previous files. Close Discord before replacing the installed set.
+### 5. Configuration, Logging & Troubleshooting
+* **Configuration:** Managed via the Windows registry at `HKCU\Software\droute` (requires restarting Discord after changes).
+* **Logs Location:** `%LOCALAPPDATA%\droute\logs\<branch>\droute-YYYY-MM-DD.log` (where `<branch>` is `stable`, `canary`, or `ptb`; updater logs are saved nearby).
+* **Log Levels (`LogLevel` DWORD in registry):**
+  * `0` — `TRACE` (All events and granular UDP tracing)
+  * `1` — `DEBUG` (Association attempts and SOCKS negotiations)
+  * `2` — `INFO` *(Default)* (Lifecycle events and UDP summaries)
+  * `3` — `WARN` (Non-fatal warnings)
+  * `4` — `ERROR` (Critical errors)
 
-### Versions
-
-The droute application version is maintained in `installer/Properties/AssemblyInfo.cs`. The native `droute.dll` reads the same version during the build and includes the Git revision in its product version. Weave has its own version in `external/weave/VERSION` because it is a separate library.
-
-### Settings & Logs
-
-- **Configuration:** Proxy settings are stored for the current Windows user at `HKCU\Software\droute`. Change them through the installer or `regedit`, then restart Discord.
-- **Logs:** Located at `%LOCALAPPDATA%\droute\logs\<branch>\droute-YYYY-MM-DD.log` and `updater-YYYY-MM-DD.log` (`stable`, `canary`, or `ptb`). Each day has a separate file; Discord processes share the same daily log. Old logs are kept.
-- **Log Level:** Controlled by the `LogLevel` (DWORD) value in `HKCU\Software\droute`:
-  - `0` — TRACE (all events and detailed UDP operations)
-  - `1` — DEBUG (association attempts, SOCKS negotiation)
-  - `2` — INFO (default: lifecycle events and UDP summaries)
-  - `3` — WARN
-  - `4` — ERROR
-
-**Reporting a Problem:**
-Include your Droute version, Discord build, proxy software and what went wrong. Attach the logs for that day and say roughly when the problem happened.
-
-- Logs include session IDs (`SESSION`), process PIDs, and connection generations (`generation`) to help trace traffic flows.
-- Proxy usernames/passwords, packet contents and command-line arguments are **not logged**.
+* **Privacy & Bug Reporting:** When reporting an issue, provide your Droute version, Discord build, proxy software, and the daily log file with an approximate timestamp. Passwords, proxy credentials, payloads, and command-line arguments are **never logged** (only session IDs, PIDs, and connection generations are retained).
 
 ## Building
 
